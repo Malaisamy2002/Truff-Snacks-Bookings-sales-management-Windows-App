@@ -204,7 +204,7 @@ export function buildDashboardSheet(ws: Worksheet, data: DashboardData) {
   pnlHeader.font = { size: 9, bold: true, color: { argb: COLOR.muted } };
   row += 1;
 
-  const headerCells = ["Month", "Revenue", "Expenses", "Profit"];
+  const headerCells = ["Month", "Revenue (incl. tax)", "Expenses", "Profit"];
   headerCells.forEach((h, idx) => {
     const cell = ws.getCell(row, 1 + idx);
     cell.value = h;
