@@ -33,6 +33,8 @@ import {
   type LineSpacingId,
   type PaperId,
 } from "@/lib/print";
+import { UPI_APPS, type UpiAppId } from "@/lib/receipt-upi";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatDMY } from "@/lib/biz";
 import { dayKey } from "@/lib/analytics";
 import { buildReceiptPdf, printReceipt, type ReceiptDoc } from "@/lib/receipt";
@@ -349,13 +351,39 @@ export function PrintSettingsCard() {
               </SettingsField>
               <SettingsField
                 label="UPI ID for Scan & Pay"
-                hint="Adds a UPI QR code to the premium A4/A5/80mm layouts. Leave blank to hide it."
+                hint="Adds a UPI QR code to the premium A4/A5/80mm/58mm/50mm layouts. Leave blank to hide it."
               >
                 <Input
                   value={settings.upiId}
                   onChange={(e) => set("upiId", e.target.value.slice(0, 80))}
                   placeholder="yourshop@upi"
                 />
+              </SettingsField>
+              <SettingsField
+                label="UPI apps shown"
+                hint="Which app chips print under the QR code. Defaults to GPay + PhonePe."
+                full
+              >
+                <div className="flex flex-wrap gap-4">
+                  {UPI_APPS.map((app) => (
+                    <label key={app.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={settings.upiApps.includes(app.id)}
+                        onCheckedChange={(checked) => {
+                          const next: UpiAppId[] = checked
+                            ? [...settings.upiApps, app.id]
+                            : settings.upiApps.filter((id) => id !== app.id);
+                          // Keep at least one app checked — an empty list
+                          // would otherwise silently fall back to the
+                          // GPay+PhonePe default, leaving the checkboxes
+                          // out of sync with what actually prints.
+                          if (next.length) set("upiApps", next);
+                        }}
+                      />
+                      {app.name}
+                    </label>
+                  ))}
+                </div>
               </SettingsField>
             </SettingsGrid>
           </SettingsGroup>
@@ -416,7 +444,7 @@ export function PrintSettingsCard() {
                 variant="ghost"
                 onClick={() => {
                   save(DEFAULT_PRINT_SETTINGS);
-                  toast.success("Reset to thermal 80 mm default");
+                  toast.success("Reset to premium thermal 80 mm default");
                 }}
               >
                 <RotateCcw className="mr-1 h-4 w-4" /> Reset defaults

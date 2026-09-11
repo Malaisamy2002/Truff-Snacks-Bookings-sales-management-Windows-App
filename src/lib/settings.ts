@@ -90,49 +90,51 @@ const savedNumber = (value: unknown, fallback: number, min: number, max: number)
 /** Validates persisted data so an older or malformed value cannot break a Settings card. */
 export function normalizeAppSettings(value: unknown): AppSettings {
   const saved = isRecord(value) ? value : {};
-  const customTaxes = Array.isArray(saved.customTaxes)
-    ? saved.customTaxes.flatMap((tax) => {
+  const customTaxes = Array.isArray(saved["customTaxes"])
+    ? saved["customTaxes"].flatMap((tax) => {
         if (!isRecord(tax)) return [];
         return [
           {
-            id: savedString(tax.id, newCustomTaxId()),
-            label: savedString(tax.label, ""),
-            rate: savedNumber(tax.rate, 0, 0, 100),
-            enabled: savedBoolean(tax.enabled, false),
+            id: savedString(tax["id"], newCustomTaxId()),
+            label: savedString(tax["label"], ""),
+            rate: savedNumber(tax["rate"], 0, 0, 100),
+            enabled: savedBoolean(tax["enabled"], false),
           },
         ];
       })
     : DEFAULT_APP_SETTINGS.customTaxes;
   const backupReminder: BackupReminder =
-    saved.backupReminder === "daily" ||
-    saved.backupReminder === "weekly" ||
-    saved.backupReminder === "off"
-      ? saved.backupReminder
+    saved["backupReminder"] === "daily" ||
+    saved["backupReminder"] === "weekly" ||
+    saved["backupReminder"] === "off"
+      ? saved["backupReminder"]
       : DEFAULT_APP_SETTINGS.backupReminder;
 
   return {
-    gstEnabled: savedBoolean(saved.gstEnabled, DEFAULT_APP_SETTINGS.gstEnabled),
-    gstRate: savedNumber(saved.gstRate, DEFAULT_APP_SETTINGS.gstRate, 0, 100),
-    gstinEnabled: savedBoolean(saved.gstinEnabled, DEFAULT_APP_SETTINGS.gstinEnabled),
-    gstin: savedString(saved.gstin, DEFAULT_APP_SETTINGS.gstin),
-    fssaiEnabled: savedBoolean(saved.fssaiEnabled, DEFAULT_APP_SETTINGS.fssaiEnabled),
-    fssaiNumber: savedString(saved.fssaiNumber, DEFAULT_APP_SETTINGS.fssaiNumber),
+    gstEnabled: savedBoolean(saved["gstEnabled"], DEFAULT_APP_SETTINGS.gstEnabled),
+    gstRate: savedNumber(saved["gstRate"], DEFAULT_APP_SETTINGS.gstRate, 0, 100),
+    gstinEnabled: savedBoolean(saved["gstinEnabled"], DEFAULT_APP_SETTINGS.gstinEnabled),
+    gstin: savedString(saved["gstin"], DEFAULT_APP_SETTINGS.gstin),
+    fssaiEnabled: savedBoolean(saved["fssaiEnabled"], DEFAULT_APP_SETTINGS.fssaiEnabled),
+    fssaiNumber: savedString(saved["fssaiNumber"], DEFAULT_APP_SETTINGS.fssaiNumber),
     customTaxes,
     billPrefix:
-      savedString(saved.billPrefix, DEFAULT_APP_SETTINGS.billPrefix).trim() ||
+      savedString(saved["billPrefix"], DEFAULT_APP_SETTINGS.billPrefix).trim() ||
       DEFAULT_APP_SETTINGS.billPrefix,
     billStartNo: Math.floor(
-      savedNumber(saved.billStartNo, DEFAULT_APP_SETTINGS.billStartNo, 1, 9_999_999),
+      savedNumber(saved["billStartNo"], DEFAULT_APP_SETTINGS.billStartNo, 1, 9_999_999),
     ),
-    whatsappOwner: savedString(saved.whatsappOwner, DEFAULT_APP_SETTINGS.whatsappOwner),
+    whatsappOwner: savedString(saved["whatsappOwner"], DEFAULT_APP_SETTINGS.whatsappOwner),
     backupReminder,
-    lastBackupAt: typeof saved.lastBackupAt === "string" ? saved.lastBackupAt : null,
+    lastBackupAt: typeof saved["lastBackupAt"] === "string" ? saved["lastBackupAt"] : null,
     monthlyReportEnabled: savedBoolean(
-      saved.monthlyReportEnabled,
+      saved["monthlyReportEnabled"],
       DEFAULT_APP_SETTINGS.monthlyReportEnabled,
     ),
     monthlyReportLastSentKey:
-      typeof saved.monthlyReportLastSentKey === "string" ? saved.monthlyReportLastSentKey : null,
+      typeof saved["monthlyReportLastSentKey"] === "string"
+        ? saved["monthlyReportLastSentKey"]
+        : null,
   };
 }
 

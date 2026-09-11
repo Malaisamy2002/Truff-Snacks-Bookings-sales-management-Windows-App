@@ -106,166 +106,174 @@ export function SnackSalesList() {
     <Card>
       <CardContent className="space-y-4">
         <LayoutParts sectionId="snacks.sales" className="space-y-4">
-        <LayoutPart id="snacks.sales.toolbar">
-        <SectionHeading
-          icon={Receipt}
-          eyebrow="Bills"
-          title="Saved snack bills"
-          action={
-            <div className="flex items-center gap-2">
-              <SortMenu
-                options={SNACK_SALE_SORT_OPTIONS}
-                field={sort.field}
-                dir={sort.dir}
-                onFieldChange={sort.setField}
-                onToggleDir={sort.toggleDir}
-                dateField="date"
-                selectedDate={saleDate}
-                onSelectDate={setSaleDate}
-              />
-              <Button size="sm" variant="outline" onClick={exportSales}>
-                <Download className="mr-1 h-4 w-4" /> Excel
-              </Button>
-            </div>
-          }
-        />
-        </LayoutPart>
-        <LayoutPart id="snacks.sales.list" className="space-y-4">
-      <ListDisclosure storageKey="snacks.sales" label="Saved snack bills" count={dateFilteredSales.length}>
-        {saleDate && (
-          <div className="frost-soft flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm">
-            <span>
-              Showing <span className="font-medium">{dateFilteredSales.length}</span> snack bill
-              {dateFilteredSales.length === 1 ? "" : "s"} for{" "}
-              <span className="font-medium">{formatDMY(saleDate)}</span>
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setSaleDate(undefined)}>
-              Clear
-            </Button>
-          </div>
-        )}
-        {sales.length === 0 && <p className="text-sm text-muted-foreground">No snack bills yet.</p>}
-        {pageSales.map((s) => {
-          const moved = saleMovedToDues(s, tabEntries);
-          const dueNo = moved
-            ? dueNoForRef(tabEntries, TAB_REF_SNACK_SALE, s.id, s.bill_no, s.sale_date)
-            : null;
-          return (
-          <div
-            key={s.id}
-            className={cn(
-              "frost-soft lift rounded-xl border p-3 text-sm",
-              moved && "opacity-60 saturate-50",
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="flex flex-wrap items-center gap-2 font-semibold">
+          <LayoutPart id="snacks.sales.toolbar">
+            <SectionHeading
+              icon={Receipt}
+              eyebrow="Bills"
+              title="Saved snack bills"
+              action={
+                <div className="flex items-center gap-2">
+                  <SortMenu
+                    options={SNACK_SALE_SORT_OPTIONS}
+                    field={sort.field}
+                    dir={sort.dir}
+                    onFieldChange={sort.setField}
+                    onToggleDir={sort.toggleDir}
+                    dateField="date"
+                    selectedDate={saleDate}
+                    onSelectDate={setSaleDate}
+                  />
+                  <Button size="sm" variant="outline" onClick={exportSales}>
+                    <Download className="mr-1 h-4 w-4" /> Excel
+                  </Button>
+                </div>
+              }
+            />
+          </LayoutPart>
+          <LayoutPart id="snacks.sales.list" className="space-y-4">
+            <ListDisclosure
+              storageKey="snacks.sales"
+              label="Saved snack bills"
+              count={dateFilteredSales.length}
+            >
+              {saleDate && (
+                <div className="frost-soft flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm">
                   <span>
-                    {s.bill_no}
-                    {s.customer_name ? ` · ${s.customer_name}` : ""}
+                    Showing <span className="font-medium">{dateFilteredSales.length}</span> snack
+                    bill
+                    {dateFilteredSales.length === 1 ? "" : "s"} for{" "}
+                    <span className="font-medium">{formatDMY(saleDate)}</span>
                   </span>
-                  {moved ? (
-                    <Badge variant="secondary">Moved to dues · {dueNo}</Badge>
-                  ) : (
-                    (() => {
-                      const state = saleStateLabel(
-                        s,
-                        s.merged_into_bill_id ? invoiceNoById.get(s.merged_into_bill_id) : null,
-                      );
-                      return state ? <Badge variant="outline">{state}</Badge> : null;
-                    })()
-                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setSaleDate(undefined)}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+              {sales.length === 0 && (
+                <p className="text-sm text-muted-foreground">No snack bills yet.</p>
+              )}
+              {pageSales.map((s) => {
+                const moved = saleMovedToDues(s, tabEntries);
+                const dueNo = moved
+                  ? dueNoForRef(tabEntries, TAB_REF_SNACK_SALE, s.id, s.bill_no, s.sale_date)
+                  : null;
+                return (
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "frost-soft lift rounded-xl border p-3 text-sm",
+                      moved && "opacity-60 saturate-50",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="flex flex-wrap items-center gap-2 font-semibold">
+                          <span>
+                            {s.bill_no}
+                            {s.customer_name ? ` · ${s.customer_name}` : ""}
+                          </span>
+                          {moved ? (
+                            <Badge variant="secondary">Moved to dues · {dueNo}</Badge>
+                          ) : (
+                            (() => {
+                              const state = saleStateLabel(
+                                s,
+                                s.merged_into_bill_id
+                                  ? invoiceNoById.get(s.merged_into_bill_id)
+                                  : null,
+                              );
+                              return state ? <Badge variant="outline">{state}</Badge> : null;
+                            })()
+                          )}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {formatDMY(s.sale_date)} · {s.payment_mode}
+                          {s.booking_no ? ` · Linked to ${s.booking_no}` : ""}
+                        </p>
+                        <ul className="mt-1 text-muted-foreground">
+                          {s.items.map((it, i) => (
+                            <li key={i}>
+                              {it.item_name} · {it.qty} × {money(it.unit_price)} ={" "}
+                              {money(it.amount)}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 font-medium">
+                          Total <span className="stat-value">{money(s.total)}</span>
+                        </p>
+                        {moved && (
+                          <p className="text-xs text-muted-foreground">
+                            On {s.customer_name || "the customer"}'s dues — collect it from the Dues
+                            tab so the same money isn't counted twice.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label="Print snack bill"
+                          title="Print bill"
+                          onClick={() =>
+                            printReceipt(snackSaleReceipt(s), undefined, INVOICE_SECTIONS.snacks)
+                          }
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label="Download snack bill"
+                          title="Download PDF"
+                          onClick={() =>
+                            downloadReceipt(snackSaleReceipt(s), undefined, INVOICE_SECTIONS.snacks)
+                          }
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <ConfirmDeleteButton
+                          size="sm"
+                          ariaLabel="Delete snack bill"
+                          title={`Delete snack bill ${s.bill_no}?`}
+                          description={`This permanently removes ${s.bill_no} (${money(s.total)}) and restores the sold items back to stock. This can't be undone.`}
+                          onConfirm={() =>
+                            del.mutate(s.id, {
+                              onSuccess: () => toast.success("Deleted"),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
 
-                </p>
-                <p className="text-muted-foreground">
-                  {formatDMY(s.sale_date)} · {s.payment_mode}
-                  {s.booking_no ? ` · Linked to ${s.booking_no}` : ""}
-                </p>
-                <ul className="mt-1 text-muted-foreground">
-                  {s.items.map((it, i) => (
-                    <li key={i}>
-                      {it.item_name} · {it.qty} × {money(it.unit_price)} = {money(it.amount)}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 font-medium">
-                  Total <span className="stat-value">{money(s.total)}</span>
-                </p>
-                {moved && (
-                  <p className="text-xs text-muted-foreground">
-                    On {s.customer_name || "the customer"}'s dues — collect it from the Dues tab so
-                    the same money isn't counted twice.
-                  </p>
-                )}
-
-              </div>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="Print snack bill"
-                  title="Print bill"
-                  onClick={() =>
-                    printReceipt(snackSaleReceipt(s), undefined, INVOICE_SECTIONS.snacks)
-                  }
-                >
-                  <Printer className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="Download snack bill"
-                  title="Download PDF"
-                  onClick={() =>
-                    downloadReceipt(snackSaleReceipt(s), undefined, INVOICE_SECTIONS.snacks)
-                  }
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-                <ConfirmDeleteButton
-                  size="sm"
-                  ariaLabel="Delete snack bill"
-                  title={`Delete snack bill ${s.bill_no}?`}
-                  description={`This permanently removes ${s.bill_no} (${money(s.total)}) and restores the sold items back to stock. This can't be undone.`}
-                  onConfirm={() =>
-                    del.mutate(s.id, {
-                      onSuccess: () => toast.success("Deleted"),
-                    })
-                  }
-                />
-              </div>
-            </div>
-          </div>
-          );
-        })}
-
-        {dateFilteredSales.length > PAGE_SIZE && (
-          <div className="flex items-center justify-between pt-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" /> Prev
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              Page {page} of {pageCount} · {dateFilteredSales.length} bills
-              {saleDate ? ` (of ${sales.length} total)` : ""}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={page >= pageCount}
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            >
-              Next <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </ListDisclosure>
-        </LayoutPart>
+              {dateFilteredSales.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="mr-1 h-4 w-4" /> Prev
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {page} of {pageCount} · {dateFilteredSales.length} bills
+                    {saleDate ? ` (of ${sales.length} total)` : ""}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page >= pageCount}
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  >
+                    Next <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </ListDisclosure>
+          </LayoutPart>
         </LayoutParts>
       </CardContent>
     </Card>

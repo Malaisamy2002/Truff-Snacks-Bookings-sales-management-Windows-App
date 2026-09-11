@@ -53,10 +53,10 @@ export function BackupEncryptionSettings() {
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Every backup sent to Telegram (or saved locally) is encrypted with this passphrase
-          before it leaves the device, so the ledger and receipt photos aren't readable by anyone
-          who only has access to that chat or file. Use the same passphrase on every device that
-          backs up or restores this ledger.
+          Every backup sent to Telegram (or saved locally) is encrypted with this passphrase before
+          it leaves the device, so the ledger and receipt photos aren't readable by anyone who only
+          has access to that chat or file. Use the same passphrase on every device that backs up or
+          restores this ledger.
         </p>
         <div className="flex gap-2">
           <div className="relative flex-1">

@@ -48,10 +48,7 @@ async function renderPages(bytes: Uint8Array): Promise<RenderedPage[]> {
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 });
-      const scale = Math.min(
-        PRINT_DPI / 72,
-        MAX_CANVAS_PX / Math.max(base.width, base.height),
-      );
+      const scale = Math.min(PRINT_DPI / 72, MAX_CANVAS_PX / Math.max(base.width, base.height));
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.floor(viewport.width));

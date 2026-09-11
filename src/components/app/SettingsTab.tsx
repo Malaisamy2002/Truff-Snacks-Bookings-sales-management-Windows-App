@@ -280,7 +280,9 @@ function SlotDurationsCard() {
             className="w-20 text-center"
             aria-label="Courts available"
             value={durations.total_courts ?? 1}
-            onChange={(e) => save.mutate({ ...durations, total_courts: clampCourts(e.target.value) })}
+            onChange={(e) =>
+              save.mutate({ ...durations, total_courts: clampCourts(e.target.value) })
+            }
           />
         </div>
       </CardContent>
@@ -471,7 +473,10 @@ function ComboRow({ combo, snackItems }: { combo: SnackCombo; snackItems: SnackI
     }
     save.mutate(
       { ...combo, name: trimmedName, price: Math.max(0, Number(price) || 0), items, is_active },
-      { onSuccess: () => toast.success(is_active === combo.is_active ? "Combo saved" : "Combo updated") },
+      {
+        onSuccess: () =>
+          toast.success(is_active === combo.is_active ? "Combo saved" : "Combo updated"),
+      },
     );
   };
 
@@ -486,17 +491,11 @@ function ComboRow({ combo, snackItems }: { combo: SnackCombo; snackItems: SnackI
           placeholder="Combo price ₹"
         />
         <div className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={combo.is_active}
-            onCheckedChange={saveDraft}
-          />
+          <Switch checked={combo.is_active} onCheckedChange={saveDraft} />
           <span className="text-muted-foreground">{combo.is_active ? "Active" : "Off"}</span>
         </div>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            onClick={() => saveDraft()}
-          >
+          <Button size="sm" onClick={() => saveDraft()}>
             <Save className="h-4 w-4" />
           </Button>
           <ConfirmDeleteButton

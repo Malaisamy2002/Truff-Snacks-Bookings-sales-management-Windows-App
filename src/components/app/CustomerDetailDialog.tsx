@@ -9,13 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import {
-  billGrossTotal,
-  customerTag,
-  formatDMY,
-  money,
-  whatsappUrl,
-} from "@/lib/biz";
+import { billGrossTotal, customerTag, formatDMY, money, whatsappUrl } from "@/lib/biz";
 import { useBills, matchesCustomer } from "@/lib/data";
 import { useSnackSales, useTurfBookings } from "@/lib/ops";
 import { isFinancialBooking } from "@/lib/analytics";

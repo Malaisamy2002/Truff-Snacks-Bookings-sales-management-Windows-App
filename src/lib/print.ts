@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_BACKGROUND, DEFAULT_LOGO, DEFAULT_ROLL_HEADER } from "./branding-assets";
+import { DEFAULT_UPI_APPS, UPI_APP_IDS, type UpiAppId } from "./receipt-upi";
 
 /**
  * Paper/printer catalogue. "roll" papers are thermal receipt rolls whose
@@ -132,15 +133,21 @@ export type PrintSettings = {
   /** Open the receipt in a normal browser tab instead of sending it straight
    * to the print dialog — lets the person double-check layout first. */
   previewBeforePrint: boolean;
-  /** "classic" = the original plain ruled-line layout (default, unchanged).
+  /** "classic" = the original plain ruled-line layout.
    * "premium" = the boxed/colored letterhead-style layout (navy+gold A4,
    * compact A5, boxed color/B&W thermal receipts, condensed 58mm POS slip)
    * — see receipt-premium.ts. Falls back to "classic" for any paper size
-   * the premium renderer doesn't have a dedicated layout for (e.g. Letter). */
+   * the premium renderer doesn't have a dedicated layout for (e.g. Letter).
+   * Premium is the out-of-the-box default so new installs match the branded
+   * invoice design; classic remains available as an explicit setting. */
   templateStyle: "classic" | "premium";
   /** UPI ID (VPA) used to render the "Scan & Pay" QR code on the premium
    * A4/A5/color-roll layouts. Blank = QR/payment box is not drawn. */
   upiId: string;
+  /** Which UPI app chips to show under the QR (editable — the shop picks
+   * whichever apps their customers actually use). Defaults to GPay +
+   * PhonePe; empty/corrupted settings fall back to the same default. */
+  upiApps: UpiAppId[];
   /** Color scheme for the premium 80mm layout only — real thermal rolls are
    * monochrome hardware ("bw", the default and the safer choice for actual
    * printing); "color" is for a shop with a genuine color receipt printer,
@@ -180,12 +187,14 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   lineSpacing: "normal",
   cutFeedMm: 0,
   previewBeforePrint: false,
-  templateStyle: "classic",
+  templateStyle: "premium",
   upiId: "",
+  upiApps: DEFAULT_UPI_APPS,
   thermalColorMode: "bw",
 };
 
 const KEY = "ks:print-settings";
+const PREMIUM_DEFAULT_MIGRATION_KEY = "ks:premium-template-default-v1";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -199,76 +208,93 @@ const savedNumber = (value: unknown, fallback: number, min: number, max: number)
 };
 const savedImage = (value: unknown, fallback: StoredImage): StoredImage => {
   if (value === null) return null;
+  if (!isRecord(value)) return fallback;
+  const dataUrl = value["dataUrl"];
+  const width = value["width"];
+  const height = value["height"];
   if (
-    !isRecord(value) ||
-    typeof value.dataUrl !== "string" ||
-    !Number.isFinite(value.width) ||
-    !Number.isFinite(value.height) ||
-    value.width <= 0 ||
-    value.height <= 0
+    typeof dataUrl !== "string" ||
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
   )
     return fallback;
-  return { dataUrl: value.dataUrl, width: value.width, height: value.height };
+  return { dataUrl, width, height };
 };
 
 /** Keeps persisted printer values valid for every Settings control and PDF layout. */
 export function normalizePrintSettings(value: unknown): PrintSettings {
   const saved = isRecord(value) ? value : {};
-  const paper = PAPER_TYPES.some((item) => item.id === saved.paper)
-    ? (saved.paper as PaperId)
+  const paper = PAPER_TYPES.some((item) => item.id === saved["paper"])
+    ? (saved["paper"] as PaperId)
     : DEFAULT_PRINT_SETTINGS.paper;
-  const density = DENSITY_OPTIONS.some((item) => item.id === saved.density)
-    ? (saved.density as DensityId)
+  const density = DENSITY_OPTIONS.some((item) => item.id === saved["density"])
+    ? (saved["density"] as DensityId)
     : DEFAULT_PRINT_SETTINGS.density;
-  const lineSpacing = LINE_SPACING_OPTIONS.some((item) => item.id === saved.lineSpacing)
-    ? (saved.lineSpacing as LineSpacingId)
+  const lineSpacing = LINE_SPACING_OPTIONS.some((item) => item.id === saved["lineSpacing"])
+    ? (saved["lineSpacing"] as LineSpacingId)
     : DEFAULT_PRINT_SETTINGS.lineSpacing;
   const templateStyle =
-    saved.templateStyle === "premium" || saved.templateStyle === "classic"
-      ? (saved.templateStyle as PrintSettings["templateStyle"])
+    saved["templateStyle"] === "premium" || saved["templateStyle"] === "classic"
+      ? (saved["templateStyle"] as PrintSettings["templateStyle"])
       : DEFAULT_PRINT_SETTINGS.templateStyle;
   const thermalColorMode =
-    saved.thermalColorMode === "color" || saved.thermalColorMode === "bw"
-      ? (saved.thermalColorMode as PrintSettings["thermalColorMode"])
+    saved["thermalColorMode"] === "color" || saved["thermalColorMode"] === "bw"
+      ? (saved["thermalColorMode"] as PrintSettings["thermalColorMode"])
       : DEFAULT_PRINT_SETTINGS.thermalColorMode;
+  const savedUpiApps = Array.isArray(saved["upiApps"])
+    ? (saved["upiApps"] as unknown[]).filter((v): v is UpiAppId =>
+        UPI_APP_IDS.includes(v as UpiAppId),
+      )
+    : [];
+  const upiApps = savedUpiApps.length ? savedUpiApps : DEFAULT_PRINT_SETTINGS.upiApps;
   return {
     paper,
-    customWidthMm: savedNumber(saved.customWidthMm, DEFAULT_PRINT_SETTINGS.customWidthMm, 50, 300),
-    fontScale: savedNumber(saved.fontScale, DEFAULT_PRINT_SETTINGS.fontScale, 0.7, 1.5),
-    copies: Math.round(savedNumber(saved.copies, DEFAULT_PRINT_SETTINGS.copies, 1, 5)),
-    shopName: savedString(saved.shopName, DEFAULT_PRINT_SETTINGS.shopName),
-    shopAddress: savedString(saved.shopAddress, DEFAULT_PRINT_SETTINGS.shopAddress),
-    shopPhone: savedString(saved.shopPhone, DEFAULT_PRINT_SETTINGS.shopPhone),
-    shopEmail: savedString(saved.shopEmail, DEFAULT_PRINT_SETTINGS.shopEmail),
-    marginMm: savedNumber(saved.marginMm, DEFAULT_PRINT_SETTINGS.marginMm, 0, 40),
+    customWidthMm: savedNumber(
+      saved["customWidthMm"],
+      DEFAULT_PRINT_SETTINGS.customWidthMm,
+      50,
+      300,
+    ),
+    fontScale: savedNumber(saved["fontScale"], DEFAULT_PRINT_SETTINGS.fontScale, 0.7, 1.5),
+    copies: Math.round(savedNumber(saved["copies"], DEFAULT_PRINT_SETTINGS.copies, 1, 5)),
+    shopName: savedString(saved["shopName"], DEFAULT_PRINT_SETTINGS.shopName),
+    shopAddress: savedString(saved["shopAddress"], DEFAULT_PRINT_SETTINGS.shopAddress),
+    shopPhone: savedString(saved["shopPhone"], DEFAULT_PRINT_SETTINGS.shopPhone),
+    shopEmail: savedString(saved["shopEmail"], DEFAULT_PRINT_SETTINGS.shopEmail),
+    marginMm: savedNumber(saved["marginMm"], DEFAULT_PRINT_SETTINGS.marginMm, 0, 40),
     a4ContentTopMm: savedNumber(
-      saved.a4ContentTopMm,
+      saved["a4ContentTopMm"],
       DEFAULT_PRINT_SETTINGS.a4ContentTopMm,
       40,
       140,
     ),
-    currencySymbol: savedString(saved.currencySymbol, DEFAULT_PRINT_SETTINGS.currencySymbol).slice(
-      0,
-      4,
-    ),
-    headerLine: savedString(saved.headerLine, DEFAULT_PRINT_SETTINGS.headerLine),
-    footerLine: savedString(saved.footerLine, DEFAULT_PRINT_SETTINGS.footerLine),
-    showPhone: savedBoolean(saved.showPhone, DEFAULT_PRINT_SETTINGS.showPhone),
-    autoPrint: savedBoolean(saved.autoPrint, DEFAULT_PRINT_SETTINGS.autoPrint),
-    logo: savedImage(saved.logo, DEFAULT_PRINT_SETTINGS.logo),
-    banner: savedImage(saved.banner, DEFAULT_PRINT_SETTINGS.banner),
-    background: savedImage(saved.background, DEFAULT_PRINT_SETTINGS.background),
-    rollHeader: savedImage(saved.rollHeader, DEFAULT_PRINT_SETTINGS.rollHeader),
-    showLogo: savedBoolean(saved.showLogo, DEFAULT_PRINT_SETTINGS.showLogo),
+    currencySymbol: savedString(
+      saved["currencySymbol"],
+      DEFAULT_PRINT_SETTINGS.currencySymbol,
+    ).slice(0, 4),
+    headerLine: savedString(saved["headerLine"], DEFAULT_PRINT_SETTINGS.headerLine),
+    footerLine: savedString(saved["footerLine"], DEFAULT_PRINT_SETTINGS.footerLine),
+    showPhone: savedBoolean(saved["showPhone"], DEFAULT_PRINT_SETTINGS.showPhone),
+    autoPrint: savedBoolean(saved["autoPrint"], DEFAULT_PRINT_SETTINGS.autoPrint),
+    logo: savedImage(saved["logo"], DEFAULT_PRINT_SETTINGS.logo),
+    banner: savedImage(saved["banner"], DEFAULT_PRINT_SETTINGS.banner),
+    background: savedImage(saved["background"], DEFAULT_PRINT_SETTINGS.background),
+    rollHeader: savedImage(saved["rollHeader"], DEFAULT_PRINT_SETTINGS.rollHeader),
+    showLogo: savedBoolean(saved["showLogo"], DEFAULT_PRINT_SETTINGS.showLogo),
     density,
     lineSpacing,
-    cutFeedMm: savedNumber(saved.cutFeedMm, DEFAULT_PRINT_SETTINGS.cutFeedMm, 0, 40),
+    cutFeedMm: savedNumber(saved["cutFeedMm"], DEFAULT_PRINT_SETTINGS.cutFeedMm, 0, 40),
     previewBeforePrint: savedBoolean(
-      saved.previewBeforePrint,
+      saved["previewBeforePrint"],
       DEFAULT_PRINT_SETTINGS.previewBeforePrint,
     ),
     templateStyle,
-    upiId: savedString(saved.upiId, DEFAULT_PRINT_SETTINGS.upiId).slice(0, 80),
+    upiId: savedString(saved["upiId"], DEFAULT_PRINT_SETTINGS.upiId).slice(0, 80),
+    upiApps,
     thermalColorMode,
   };
 }
@@ -277,7 +303,25 @@ export function readPrintSettings(): PrintSettings {
   if (typeof window === "undefined") return DEFAULT_PRINT_SETTINGS;
   try {
     const raw = window.localStorage.getItem(KEY);
-    return raw ? normalizePrintSettings(JSON.parse(raw) as unknown) : DEFAULT_PRINT_SETTINGS;
+    if (!raw) return DEFAULT_PRINT_SETTINGS;
+
+    const saved = JSON.parse(raw) as unknown;
+    const normalized = normalizePrintSettings(saved);
+    const migrationDone = window.localStorage.getItem(PREMIUM_DEFAULT_MIGRATION_KEY) === "1";
+    if (!migrationDone) {
+      // The premium renderer was already available in older builds, but the
+      // persisted default was classic. Upgrade that legacy default once so an
+      // existing install gets the new branded bills without removing the
+      // classic option from Settings.
+      const migrated =
+        isRecord(saved) && saved["templateStyle"] === "classic"
+          ? { ...normalized, templateStyle: "premium" as const }
+          : normalized;
+      window.localStorage.setItem(KEY, JSON.stringify(migrated));
+      window.localStorage.setItem(PREMIUM_DEFAULT_MIGRATION_KEY, "1");
+      return migrated;
+    }
+    return normalized;
   } catch {
     return DEFAULT_PRINT_SETTINGS;
   }
@@ -286,6 +330,9 @@ export function readPrintSettings(): PrintSettings {
 export function writePrintSettings(value: PrintSettings) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(KEY, JSON.stringify(value));
+  // A manual save is an explicit choice, including choosing classic. Mark
+  // the one-time default migration complete so that choice is preserved.
+  window.localStorage.setItem(PREMIUM_DEFAULT_MIGRATION_KEY, "1");
   window.dispatchEvent(new CustomEvent("ks:print-settings"));
 }
 

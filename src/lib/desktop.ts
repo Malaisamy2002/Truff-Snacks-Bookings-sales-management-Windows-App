@@ -98,8 +98,10 @@ const APP_DOCS_FOLDER = "TurfApp";
  * Cached after the first successful resolution so every subsequent call
  * doesn't re-probe.
  */
-let cachedAppDocsBase: { baseDir: import("@tauri-apps/plugin-fs").BaseDirectory; root: () => Promise<string> } | null =
-  null;
+let cachedAppDocsBase: {
+  baseDir: import("@tauri-apps/plugin-fs").BaseDirectory;
+  root: () => Promise<string>;
+} | null = null;
 
 async function resolveAppDocsBase() {
   if (cachedAppDocsBase) return cachedAppDocsBase;
@@ -291,7 +293,6 @@ export function describeSaveError(e: unknown): string {
   return text;
 }
 
-
 /**
  * Saves an exported file (bill/report PDF, Excel workbook, backup/archive
  * `.db` or `.zip`) into the device's public Downloads folder on Android, via
@@ -341,5 +342,4 @@ export async function saveExportFile(
   } catch (e) {
     return { saved: false, error: describeSaveError(e) };
   }
-
 }
