@@ -37,7 +37,7 @@ export function WhatsAppSummaryCard() {
     const text = [
       `*${printSettings.shopName || BUSINESS_NAME} — Daily summary (${dateText})*`,
       `Collected: ${money(s.collected)}${modeText ? `\n${modeText}` : ""}`,
-      `Revenue: ${money(s.revenue)} (Tax: ${money(s.tax)}) · Expenses: ${money(s.expenses)} · Profit: ${money(s.profit)}`,
+      `Revenue (incl. tax): ${money(s.revenue)} (Tax: ${money(s.tax)}) · Expenses: ${money(s.expenses)} · Profit: ${money(s.profit)}`,
       `Turf bookings: ${bookings.filter((b) => b.booking_date === today && b.status !== "Cancelled").length} · Snack bills: ${sales.filter((x) => x.sale_date === today).length}`,
       `Pending dues: ${money(s.dues)}`,
     ].join("\n");

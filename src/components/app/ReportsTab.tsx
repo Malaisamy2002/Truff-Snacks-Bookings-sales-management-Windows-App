@@ -333,6 +333,9 @@ export function ReportsTab() {
   // Chart data for "Last 6 months": derived from the same `pnl` rows used by
   // the table above (single source of truth), with a profit-margin %
   // computed alongside so it can ride a secondary axis over the revenue bars.
+  // Margin is Profit ÷ NetRevenue (pre-tax), matching how Profit itself is
+  // computed (netRevenue − expenses) — dividing by gross Revenue instead
+  // would understate margin by diluting it with pass-through tax money.
   const revenueTrend = useMemo(
     () =>
       pnl.map((r) => ({
@@ -340,7 +343,7 @@ export function ReportsTab() {
         Turf: r.Turf,
         Snacks: r.Snacks,
         Bills: r.Bills,
-        Margin: r.Revenue > 0 ? (r.Profit / r.Revenue) * 100 : 0,
+        Margin: r.NetRevenue > 0 ? (r.Profit / r.NetRevenue) * 100 : 0,
       })),
     [pnl],
   );
@@ -358,10 +361,10 @@ export function ReportsTab() {
 
   const compareCards = [
     {
-      label: "Revenue",
-      value: cur.revenue,
-      previous: prev.revenue,
-      change: pctChange(cur.revenue, prev.revenue),
+      label: "Net revenue",
+      value: cur.netRevenue,
+      previous: prev.netRevenue,
+      change: pctChange(cur.netRevenue, prev.netRevenue),
       invert: false,
     },
     {
@@ -369,6 +372,13 @@ export function ReportsTab() {
       value: cur.tax,
       previous: prev.tax,
       change: pctChange(cur.tax, prev.tax),
+      invert: false,
+    },
+    {
+      label: "Revenue (incl. tax)",
+      value: cur.revenue,
+      previous: prev.revenue,
+      change: pctChange(cur.revenue, prev.revenue),
       invert: false,
     },
     {
@@ -399,7 +409,21 @@ export function ReportsTab() {
     const prevCollectionRate = prev.revenue > 0 ? (prev.collected / prev.revenue) * 100 : 0;
     const dashboardKpis = [
       {
-        label: "Revenue",
+        label: "Net revenue",
+        value: cur.netRevenue,
+        previous: prev.netRevenue,
+        change: pctChange(cur.netRevenue, prev.netRevenue),
+        invert: false,
+      },
+      {
+        label: "Tax",
+        value: cur.tax,
+        previous: prev.tax,
+        change: pctChange(cur.tax, prev.tax),
+        invert: false,
+      },
+      {
+        label: "Revenue (incl. tax)",
         value: cur.revenue,
         previous: prev.revenue,
         change: pctChange(cur.revenue, prev.revenue),
@@ -479,7 +503,7 @@ export function ReportsTab() {
             Turf: r.Turf,
             Snacks: r.Snacks,
             Bills: r.Bills,
-            Revenue: r.Revenue,
+            "Revenue (incl. tax)": r.Revenue,
             Expenses: r.Expenses,
             Profit: r.Profit,
             Collected: r.Collected,
@@ -770,7 +794,7 @@ export function ReportsTab() {
             Turf: r.Turf,
             Snacks: r.Snacks,
             Bills: r.Bills,
-            Revenue: r.Revenue,
+            "Revenue (incl. tax)": r.Revenue,
             Expenses: r.Expenses,
             Profit: r.Profit,
             Collected: r.Collected,
@@ -1030,7 +1054,7 @@ export function ReportsTab() {
         },
         {
           title: "Profit & loss — last 6 months",
-          columns: ["Month", "Revenue", "Expenses", "Profit", "Collected"],
+          columns: ["Month", "Revenue (incl. tax)", "Expenses", "Profit", "Collected"],
           rows: pnl.map((r) => ({
             cells: [
               r.month,
@@ -1158,7 +1182,7 @@ export function ReportsTab() {
   };
 
   const sharePdf = () => {
-    const text = `${monthLabel(month)} statement: revenue ${money(cur.revenue)}, profit ${money(cur.profit)}.`;
+    const text = `${monthLabel(month)} statement: revenue ${money(cur.revenue)} (incl. tax), profit ${money(cur.profit)}.`;
     shareReportPdf(buildStatementDoc(), whatsappUrl(text)).then(
       (result) => {
         if (result !== "cancelled") toast.success("Statement ready to share");
@@ -1310,7 +1334,7 @@ export function ReportsTab() {
         </CardHeader>
         </LayoutPart>
         <LayoutPart id="reports.comparison.tiles">
-        <CardContent className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {compareCards.map((c) => (
             <div key={c.label} className="frost-soft lift rounded-lg border p-3">
               <p className="micro-label text-muted-foreground">{c.label}</p>
@@ -1335,7 +1359,7 @@ export function ReportsTab() {
             <thead>
               <tr className="text-left text-muted-foreground">
                 <th className="py-2">Month</th>
-                <th className="py-2 text-right">Revenue</th>
+                <th className="py-2 text-right">Revenue (incl. tax)</th>
                 <th className="py-2 text-right">Expenses</th>
                 <th className="py-2 text-right">Profit</th>
                 <th className="py-2 text-right">Dues</th>

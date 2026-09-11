@@ -32,7 +32,6 @@ import {
   readAppSettings,
   type BackupReminder,
 } from "@/lib/settings";
-import { missingReceiptsNotice, scanMissingReceipts } from "@/lib/receipts-share";
 
 export function BackupCard() {
   const qc = useQueryClient();
@@ -53,18 +52,6 @@ export function BackupCard() {
     }
   };
 
-  // After any restore (merge or replace) the expense rows arrive but their
-  // receipt photos never do — photo bytes are deliberately kept out of the
-  // .db backup (see DATA_TABLES in localdb.ts and receipts-share.ts). Scan
-  // once, right after the restore's own success toast, and point the person
-  // at the "Import receipt photos" card just below instead of letting them
-  // discover the gap later, one broken "View receipt" at a time.
-  const notifyMissingReceipts = async () => {
-    const scan = await scanMissingReceipts();
-    const notice = missingReceiptsNotice(scan);
-    if (notice) toast.info("Some receipt photos are missing", { description: notice });
-  };
-
   const applyBackup = async (text: string) => {
     const backup = parseBackup(text);
     if (!merge) {
@@ -75,7 +62,6 @@ export function BackupCard() {
     const count = await restoreBackup(backup, "merge");
     await qc.invalidateQueries();
     toast.success(`Restored ${count} records`, { description: backupSummary(backup) });
-    await notifyMissingReceipts();
   };
 
   const confirmRestore = async () => {
@@ -87,7 +73,6 @@ export function BackupCard() {
       const count = await restoreBackup(backup, "replace");
       await qc.invalidateQueries();
       toast.success(`Restored ${count} records`, { description: backupSummary(backup) });
-      await notifyMissingReceipts();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

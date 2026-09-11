@@ -301,7 +301,7 @@ export function TurfTab() {
   // typed "50.5" would otherwise carry paise into a saved booking.
   const discountValue = Math.min(Math.max(rupees(Number(discount) || 0), 0), gross);
   const total = Math.max(0, gross - discountValue);
-  const balance = Math.max(0, total - (Number(form.advance_paid) || 0));
+  const balance = Math.max(0, total - rupees(form.advance_paid));
 
   const { data: tabEntries = [] } = useTabEntries();
   const { data: allBills = [] } = useBills();

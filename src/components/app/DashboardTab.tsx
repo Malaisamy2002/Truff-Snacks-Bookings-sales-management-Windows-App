@@ -249,7 +249,9 @@ export function DashboardTab() {
           title: `${monthLabel(key)} vs ${monthLabel(prevKey)}`,
           columns: ["Metric", monthLabel(key), monthLabel(prevKey), "Change"],
           rows: [
-            { label: "Revenue", cur: stats.revenue, prev: prevStats.revenue },
+            { label: "Net revenue", cur: stats.netRevenue, prev: prevStats.netRevenue },
+            { label: "Tax", cur: stats.tax, prev: prevStats.tax },
+            { label: "Revenue (incl. tax)", cur: stats.revenue, prev: prevStats.revenue },
             { label: "Collected", cur: stats.collected, prev: prevStats.collected },
             { label: "Expenses", cur: stats.expenses, prev: prevStats.expenses },
             { label: "Profit", cur: stats.profit, prev: prevStats.profit },
@@ -269,7 +271,7 @@ export function DashboardTab() {
         },
         {
           title: "Profit & loss — last 6 months",
-          columns: ["Month", "Revenue", "Expenses", "Profit", "Collected"],
+          columns: ["Month", "Revenue (incl. tax)", "Expenses", "Profit", "Collected"],
           rows: monthPnl.map((r) => ({
             cells: [
               r.month,
@@ -307,7 +309,7 @@ export function DashboardTab() {
 
   const shareMonthlyReport = (key: string) => {
     const stats = statsForMonth(src, key);
-    const text = `${monthLabel(key)} statement: revenue ${money(stats.revenue)}, profit ${money(stats.profit)}.`;
+    const text = `${monthLabel(key)} statement: revenue ${money(stats.revenue)} (incl. tax), profit ${money(stats.profit)}.`;
     shareReportPdf(buildMonthlyStatementDoc(key), whatsappUrl(text)).then(
       (result) => {
         if (result !== "cancelled") {
@@ -565,18 +567,34 @@ export function DashboardTab() {
     },
   ];
 
-  const monthCards = [
+  type MonthCard = {
+    title: string;
+    value: number;
+    change: number | null;
+    invert: boolean;
+    hint?: string;
+  };
+  const monthCards: MonthCard[] = [
     {
-      title: "Month revenue",
+      title: "Month net revenue",
       value: month.netRevenue,
       change: pctChange(month.netRevenue, prev.netRevenue),
       invert: false,
+      hint: "Bills + turf + snacks, no tax",
     },
     {
       title: "Month tax",
       value: month.tax,
       change: pctChange(month.tax, prev.tax),
       invert: false,
+      hint: "GST & custom taxes collected",
+    },
+    {
+      title: "Month revenue (incl. tax)",
+      value: month.revenue,
+      change: pctChange(month.revenue, prev.revenue),
+      invert: false,
+      hint: "Net revenue + tax",
     },
     {
       title: "Month collected",
@@ -698,12 +716,15 @@ export function DashboardTab() {
           </LayoutPart>
           <LayoutPart id="home.month-compare.cards">
           <Card className="frost">
-            <CardContent className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-5">
+            <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
               {monthCards.map((c) => (
                 <div key={c.title} className="frost-soft rounded-xl border p-3">
                   <p className="micro-label">{c.title}</p>
                   <p className="stat-value mt-1 text-lg leading-tight">{money(c.value)}</p>
                   <DeltaStat change={c.change} invert={c.invert} />
+                  {c.hint && (
+                    <p className="mt-1 text-[10px] leading-tight text-muted-foreground">{c.hint}</p>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -775,7 +796,13 @@ export function DashboardTab() {
                   <XAxis dataKey="month" fontSize={11} />
                   <YAxis fontSize={10} width={44} />
                   <Tooltip formatter={(v: number) => money(v)} />
-                  <Line type="monotone" dataKey="Revenue" stroke="var(--chart-1)" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="Revenue"
+                    name="Revenue (incl. tax)"
+                    stroke="var(--chart-1)"
+                    strokeWidth={2}
+                  />
                   <Line type="monotone" dataKey="Profit" stroke="var(--chart-2)" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
