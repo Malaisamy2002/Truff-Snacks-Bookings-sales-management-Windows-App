@@ -811,14 +811,18 @@ export async function printReceipt(
   // webview's ordinary print pipeline instead, which does show the real
   // Windows print dialog.
   if (isDesktop() && !isAndroid()) {
+    // The installed app ships without DevTools (no `devtools` Cargo
+    // feature), so `console.error` here would go to a console nobody can
+    // ever open — the actual reason has to reach the screen instead.
+    let failureReason: string | null = null;
     try {
       printed = await printPdfBytesAsImages(
         new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer),
         copies,
       );
     } catch (err) {
-      console.error("Raster print failed:", err);
       printed = false;
+      failureReason = err instanceof Error ? err.message : String(err);
     }
     // Deliberately no PDF-window fallback here: the person picked "Default
     // print" (see printMethod), so silently popping a second PDF window
@@ -827,8 +831,11 @@ export async function printReceipt(
     // let them switch to "PDF print" themselves if they'd rather do that.
     URL.revokeObjectURL(url);
     if (!printed) {
-      toast.error("Couldn't open the printer dialog", {
-        description: "Switch to PDF print in Print Settings, then try again.",
+      toast.error("Couldn't open the Windows print dialog", {
+        description: failureReason
+          ? `${failureReason} — switch to PDF print in Print Settings, or try again.`
+          : "Switch to PDF print in Print Settings, then try again.",
+        duration: 10_000,
       });
     }
     return;

@@ -101,26 +101,41 @@ function buildPrintDocument(pages: RenderedPage[], copies: number): string {
 
 /**
  * Rasterises the PDF and opens the OS print dialog for it.
- * Resolves `true` once the print job has been handed to the OS, `false` if
- * the webview refused — the caller then falls back to opening the saved file.
+ * Resolves `true` once the print job has been handed to the OS. Rejects
+ * with a descriptive `Error` (never just resolves `false`) if the webview
+ * refused — this build ships without DevTools enabled (no `devtools`
+ * Cargo feature), so a caller printing a raw `console.error` would be
+ * throwing the actual reason into a console nobody using the installed
+ * app can ever open. Every failure path below carries an actual message
+ * so the caller can put it on-screen instead.
  */
 export async function printPdfBytesAsImages(bytes: Uint8Array, copies = 1): Promise<boolean> {
   const pages = await renderPages(bytes);
   const html = buildPrintDocument(pages, Math.max(1, Math.min(5, Math.round(copies || 1))));
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean>((resolve, reject) => {
     const frame = document.createElement("iframe");
     let finished = false;
-    const finish = (printed: boolean) => {
+    const succeed = () => {
       if (finished) return;
       finished = true;
       window.clearTimeout(timeout);
       // Left in the DOM briefly: removing it while the print dialog is still
       // open cancels the job on some Windows drivers.
       window.setTimeout(() => frame.remove(), 1_000);
-      resolve(printed);
+      resolve(true);
     };
-    const timeout = window.setTimeout(() => finish(false), 30_000);
+    const fail = (reason: string) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeout);
+      window.setTimeout(() => frame.remove(), 1_000);
+      reject(new Error(reason));
+    };
+    const timeout = window.setTimeout(
+      () => fail("Timed out waiting for the Windows print dialog to open."),
+      30_000,
+    );
     frame.setAttribute("aria-hidden", "true");
     // WebView2 silently refuses to open the print dialog for an iframe
     // parked off-canvas (left/top -10000px) — print() just no-ops instead
@@ -132,13 +147,13 @@ export async function printPdfBytesAsImages(bytes: Uint8Array, copies = 1): Prom
     frame.onload = () => {
       try {
         const win = frame.contentWindow;
-        if (!win) throw new Error("Print frame is unavailable");
+        if (!win) throw new Error("The hidden print frame did not load (no window).");
         let afterPrintFired = false;
         win.addEventListener(
           "afterprint",
           () => {
             afterPrintFired = true;
-            finish(true);
+            succeed();
           },
           { once: true },
         );
@@ -161,14 +176,21 @@ export async function printPdfBytesAsImages(bytes: Uint8Array, copies = 1): Prom
             // too short here would misreport a still-open dialog as a
             // failure and pop the saved-PDF fallback open on top of it.
             window.setTimeout(() => {
-              if (!afterPrintFired) finish(false);
+              if (!afterPrintFired)
+                fail(
+                  "The Windows print dialog didn't open (WebView2 silently declined window.print()).",
+                );
             }, 3_000);
-          } catch {
-            finish(false);
+          } catch (err) {
+            fail(
+              `window.print() threw: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         }, 100);
-      } catch {
-        finish(false);
+      } catch (err) {
+        fail(
+          `Couldn't prepare the print frame: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     };
     frame.srcdoc = html;
