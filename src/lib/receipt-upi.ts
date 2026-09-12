@@ -105,23 +105,45 @@ export function drawQr(
   }
 }
 
-/** Little tri-colour "UPI" wordmark. Vector text, no bitmap asset, so it
- * stays sharp and works fully offline. */
-function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number, mono: boolean) {
+/**
+ * Official NPCI UPI mark — bold "UPI" wordmark followed by the saffron /
+ * white / green tricolour arrow, matching the current npci.org.in logo.
+ * Drawn as vector shapes (no bitmap asset) so it prints crisp at any size
+ * and stays in sync with the real mark instead of the old solid-colour
+ * lettering (which also went unreadable: its near-black "I" disappeared
+ * against the navy header). White text keeps full contrast there; the
+ * arrow's three flat triangles carry the tricolour instead of the letters.
+ */
+function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number) {
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(fontSize);
-  const letters: { ch: string; color: RGB }[] = [
-    { ch: "U", color: mono ? [40, 40, 40] : [255, 115, 2] },
-    { ch: "P", color: mono ? [40, 40, 40] : [0, 140, 68] },
-    { ch: "I", color: mono ? [40, 40, 40] : [20, 20, 20] },
+  pdf.setTextColor(255, 255, 255);
+  pdf.text("UPI", x, y);
+  const textW = pdf.getTextWidth("UPI");
+
+  // Tricolour arrow: three overlapping right-pointing triangles (saffron,
+  // white, green — front to back) rather than one filled shape, so the
+  // tricolour reads correctly on any background, not just white.
+  const gap = fontSize * 0.22;
+  const arrowH = fontSize * 0.82;
+  const arrowW = arrowH * 0.6;
+  const step = arrowW * 0.42;
+  const ax = x + textW + gap;
+  const topY = y - arrowH * 0.76;
+  const botY = y + arrowH * 0.24;
+  const midY = (topY + botY) / 2;
+  const stripes: RGB[] = [
+    [255, 153, 51],
+    [255, 255, 255],
+    [19, 136, 8],
   ];
-  let cx = x;
-  for (const l of letters) {
-    pdf.setTextColor(...l.color);
-    pdf.text(l.ch, cx, y);
-    cx += pdf.getTextWidth(l.ch) + 0.2;
-  }
-  return cx - x;
+  stripes.forEach((color, i) => {
+    const ox = ax + i * step;
+    pdf.setFillColor(...color);
+    pdf.triangle(ox, topY, ox, botY, ox + arrowW, midY, "F");
+  });
+
+  return textW + gap + step * (stripes.length - 1) + arrowW;
 }
 
 function appStripWidth(
@@ -289,17 +311,16 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
   pdf.setFontSize(titleFont);
   pdf.setTextColor(255, 255, 255);
   pdf.text("SCAN & PAY", o.x + pad, o.y + headerH * 0.72);
-  const markW = drawUpiMark(pdf, 0, -100, titleFont, mono); // measure off-page
-  drawUpiMark(pdf, o.x + o.width - pad - markW, o.y + headerH * 0.72, titleFont, false);
-  // Re-paint the wordmark in white when mono (the coloured pass above is
-  // invisible on a monochrome header otherwise).
+  const markW = drawUpiMark(pdf, 0, -100, titleFont); // measure off-page
   if (mono) {
-    pdf.setFillColor(...o.navy);
-    pdf.rect(o.x + o.width - pad - markW - 0.6, o.y + 0.8, markW + 1.2, headerH - 1.2, "F");
-    pdf.setTextColor(255, 255, 255);
+    // Thermal B&W can't print the tricolour arrow — just the plain white
+    // "UPI" wordmark, right-aligned like the colour header.
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(titleFont);
+    pdf.setTextColor(255, 255, 255);
     pdf.text("UPI", o.x + o.width - pad, o.y + headerH * 0.72, { align: "right" });
+  } else {
+    drawUpiMark(pdf, o.x + o.width - pad - markW, o.y + headerH * 0.72, titleFont);
   }
 
   const topY = o.y + headerH + pad;
