@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { db, table, DATA_TABLES, nowIso, type ExpenseRow, type ReceiptHashRow } from "./localdb";
 import { restoreBackup, type BackupFile } from "./backup";
+import { findInvalidReceiptHashRows } from "./backup-validate";
 import { resolveImportAction, sha256Hex } from "./receipts-share";
 import {
   appDocumentExists,
@@ -11,8 +12,7 @@ import {
   saveToAppDocuments,
 } from "./desktop";
 import { secureDelete, secureGet, secureSet } from "./android-secure-store";
-import { decryptBackup, encryptBackup, isEncryptedBackup } from "./backup-crypto";
-import { readBackupPassphrase } from "./backup-passphrase";
+import { decryptFullBackupBytes, encryptFullBackupBytes } from "./backup-crypto";
 
 /**
  * Telegram full backup — ONE archive, ONE destination, ONE restore action.
@@ -172,24 +172,6 @@ export async function buildFullBackup(
   return { backup, bytes, missingFiles };
 }
 
-/**
- * Encrypts a built backup's zip bytes with this device's stored backup
- * passphrase (see `backup-passphrase.ts`). Every path that sends the
- * archive somewhere it doesn't fully control (Telegram) or that writes it
- * to a shared location (the local-save fallback, which can end up
- * copied/shared like any other file) should call this on `buildFullBackup`'s
- * `bytes` before handing them off. Throws a plain, actionable error if no
- * passphrase has been set yet rather than silently falling back to plaintext.
- */
-export async function encryptFullBackupBytes(bytes: Uint8Array): Promise<Uint8Array> {
-  const passphrase = await readBackupPassphrase();
-  if (!passphrase)
-    throw new Error(
-      "Set a backup encryption passphrase (Settings → Backup encryption) before backing up.",
-    );
-  return encryptBackup(bytes, passphrase);
-}
-
 export type RestoreFullBackupResult = {
   rowsRestored: number;
   filesRestored: number;
@@ -216,20 +198,27 @@ export async function restoreFullBackup(
   let bytes = archiveBytes instanceof Uint8Array ? archiveBytes : new Uint8Array(archiveBytes);
   // Archives made after encryption was added are encrypted (see
   // `encryptFullBackupBytes`); older archives made before it are plain
-  // zips. Detect and handle both so a backup someone already has
-  // saved/sent doesn't become unrestorable.
-  if (isEncryptedBackup(bytes)) {
-    const passphrase = await readBackupPassphrase();
-    if (!passphrase)
-      throw new Error(
-        "This backup is encrypted. Enter the same backup passphrase used to create it (Settings → Backup encryption) and try again.",
-      );
-    bytes = await decryptBackup(bytes, passphrase);
-  }
+  // zips. `decryptFullBackupBytes` detects and handles both so a backup
+  // someone already has saved/sent doesn't become unrestorable.
+  bytes = await decryptFullBackupBytes(bytes);
   const zip = await JSZip.loadAsync(bytes);
   const manifestEntry = zip.files[MANIFEST_NAME];
   if (!manifestEntry || manifestEntry.dir) throw new Error("This archive has no manifest.json");
   const backup = parseFullBackupManifest(await manifestEntry.async("string"));
+
+  // `receipt_hashes` isn't in BACKUP_TABLES (see DATA_TABLES in localdb.ts),
+  // so restoreBackup()'s own row validation below never sees these rows —
+  // check them here, before restoreBackup touches anything, so a corrupted
+  // receipt-hashes block can't let the main tables get restored (and, in
+  // replace mode, cleared) while this half of the archive is left broken.
+  const hashRows = (backup.tables["receipt_hashes"] ?? []) as unknown as ReceiptHashRow[];
+  const hashProblems = findInvalidReceiptHashRows(hashRows);
+  if (hashProblems.length > 0)
+    throw new Error(
+      `This backup's receipt-hash records look corrupted (${hashProblems.length} bad row${
+        hashProblems.length === 1 ? "" : "s"
+      }) — nothing was restored.`,
+    );
 
   const legacy: BackupFile = {
     format: "turf-snack-ledger",
@@ -239,14 +228,12 @@ export async function restoreFullBackup(
   };
   const rowsRestored = await restoreBackup(legacy, mode);
 
-  // `receipts` and `receipt_hashes` aren't in BACKUP_TABLES (see DATA_TABLES
-  // in localdb.ts), so the restoreBackup() call above never touches either
-  // one — `receipts` is rebuilt below from the zip's actual file bytes
-  // (using its captured `created_at`, not "now"), and `receipt_hashes` is
-  // restored here with the same replace/merge semantics as everything else:
-  // replace wipes and reinserts every hash the archive carried, merge only
-  // adds hashes for paths this device doesn't already have one for.
-  const hashRows = (backup.tables["receipt_hashes"] ?? []) as unknown as ReceiptHashRow[];
+  // `receipts` isn't in BACKUP_TABLES either, so it's rebuilt below from the
+  // zip's actual file bytes (using its captured `created_at`, not "now").
+  // `receipt_hashes` (validated above) is restored here with the same
+  // replace/merge semantics as everything else: replace wipes and reinserts
+  // every hash the archive carried, merge only adds hashes for paths this
+  // device doesn't already have one for.
   if (hashRows.length > 0) {
     if (mode === "replace") {
       await db.receipt_hashes.clear();
@@ -449,7 +436,20 @@ async function readSecret(
   secureStoreKey: string,
 ): Promise<string> {
   if (isAndroid()) {
-    return (await secureGet(secureStoreKey)) ?? "";
+    const secure = await secureGet(secureStoreKey);
+    if (secure !== null) return secure;
+    // secureGet() returns null both for "nothing stored" and for "the
+    // secure store rejected/failed the read" (see android-secure-store.ts).
+    // writeSecret()'s Android branch falls back to localStorage on a
+    // rejected/failed write, so the read path has to check the same
+    // fallback location — otherwise a value that *was* saved (just not
+    // into the secure store) silently reads back as empty forever.
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem(webKey) ?? "";
+    } catch {
+      return "";
+    }
   }
   if (isDesktop()) {
     const { invoke } = await import("@tauri-apps/api/core");
