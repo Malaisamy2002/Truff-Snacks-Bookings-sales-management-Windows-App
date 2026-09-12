@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
+import { PAYMENT_BRAND_LOGOS, type PaymentBrandId } from "./payment-brand-assets";
 
 /**
  * The single "Scan & Pay" payment panel shared by every bill format —
@@ -10,14 +11,14 @@ import QRCode from "qrcode";
  * The QR is a *static* UPI QR (no `am` parameter): the payer types the amount
  * themselves, which is what turf advances, part payments and running dues
  * need. Payload follows the NPCI deep-link format (`pa`/`pn`/`cu`/`tn`) that
- * Google Pay, PhonePe, Paytm and BHIM UPI all accept.
+ * GPay, PhonePe, Paytm and BHIM all accept.
  */
 
 export const UPI_APPS = [
-  { id: "gpay", name: "Google Pay", color: [66, 133, 244] as RGB },
-  { id: "phonepe", name: "PhonePe", color: [95, 37, 159] as RGB },
-  { id: "paytm", name: "Paytm", color: [0, 150, 214] as RGB },
-  { id: "bhim", name: "BHIM", color: [242, 101, 34] as RGB },
+  { id: "gpay", name: "GPay", color: [66, 133, 244] as RGB, brand: "gpay" },
+  { id: "phonepe", name: "PhonePe", color: [95, 37, 159] as RGB, brand: "phonepe" },
+  { id: "paytm", name: "Paytm", color: [0, 150, 214] as RGB, brand: "paytm" },
+  { id: "bhim", name: "BHIM", color: [242, 101, 34] as RGB, brand: "bhim" },
 ] as const;
 
 export type UpiAppId = (typeof UPI_APPS)[number]["id"];
@@ -123,10 +124,23 @@ function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number, mono: b
   return cx - x;
 }
 
+function appStripWidth(
+  apps: (typeof UPI_APPS)[number][],
+  logoH: number,
+  padX: number,
+  gap: number,
+) {
+  return apps.reduce(
+    (w, a) => w + logoH * PAYMENT_BRAND_LOGOS[a.brand as PaymentBrandId].aspect + padX * 2 + gap,
+    -gap,
+  );
+}
+
 /**
- * Lightweight app line under the QR. Keep the official app names readable
- * without putting each name inside a pill or a second box — the QR remains
- * the visual focus and the line still works on monochrome thermal printers.
+ * Row of official UPI-app wordmarks, limited to whichever apps the shop
+ * picked in Settings. The PNGs are embedded in the bundle rather than loaded
+ * from a URL, so exported invoices keep their brand marks offline and the
+ * synchronous jsPDF renderer can place them reliably.
  */
 function drawAppStrip(
   pdf: jsPDF,
@@ -136,24 +150,25 @@ function drawAppStrip(
   fontSize: number,
   mono: boolean,
 ): number {
-  const gap = 2.2;
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(fontSize);
-  const total = apps.reduce(
-    (w, a) => w + fontSize * 0.22 + 0.8 + pdf.getTextWidth(a.name) + gap,
-    -gap,
-  );
+  const padX = mono ? 0.8 : 1;
+  const gap = 1.2;
+  const logoH = Math.max(2.8, fontSize * 0.62);
+  const padY = 0.45;
+  const h = logoH + padY * 2;
+  const total = appStripWidth(apps, logoH, padX, gap);
   let x = centerX - total / 2;
   for (const app of apps) {
-    const dot = fontSize * 0.22;
-    const textX = x + dot + 0.8;
-    pdf.setFillColor(...(mono ? [70, 70, 70] : app.color));
-    pdf.circle(x + dot / 2, y + fontSize * 0.32, dot / 2, "F");
-    pdf.setTextColor(...(mono ? [55, 55, 55] : [45, 45, 45]));
-    pdf.text(app.name, textX, y + fontSize * 0.72);
-    x += dot + 0.8 + pdf.getTextWidth(app.name) + gap;
+    const logo = PAYMENT_BRAND_LOGOS[app.brand as PaymentBrandId];
+    const logoW = logoH * logo.aspect;
+    const w = logoW + padX * 2;
+    pdf.setFillColor(255, 255, 255);
+    pdf.setDrawColor(mono ? 90 : 220, mono ? 90 : 222, mono ? 90 : 228);
+    pdf.setLineWidth(0.15);
+    pdf.roundedRect(x, y, w, h, 0.7, 0.7, "FD");
+    pdf.addImage(logo.dataUrl, "PNG", x + padX, y + padY, logoW, logoH);
+    x += w + gap;
   }
-  return fontSize * 0.72;
+  return h;
 }
 
 export type UpiPanelOpts = {
@@ -209,7 +224,7 @@ function panelMetrics(o: {
   const bodyFont = (wide ? 8 : 6.5) * scale;
   const smallFont = (wide ? 6.8 : 5.8) * scale;
   const chipFont = (wide ? 5.6 : 5) * scale;
-  const qrBlockH = qrSize + 2 + chipFont * 0.72 + 1.5 + smallFont * 0.5;
+  const qrBlockH = qrSize + 2 + chipFont * 0.5 + 1.5 + smallFont * 0.5;
   const detailRows = 3 + (o.hasBalance || o.paid ? 1 : 0);
   const detailsH = detailRows * bodyFont * 0.62 + 2;
   const bodyH = wide ? Math.max(qrBlockH, detailsH) : qrBlockH + detailsH + 2;
@@ -297,7 +312,7 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
   pdf.rect(qrX - 0.8, qrY - 0.8, qrSize + 1.6, qrSize + 1.6, "D");
   drawQr(pdf, qrX, qrY, qrSize, uri, dark);
 
-  let underY = qrY + qrSize + 2 + chipFont * 0.72;
+  let underY = qrY + qrSize + 2 + chipFont * 0.5;
   drawAppStrip(pdf, apps, qrX + qrSize / 2, qrY + qrSize + 2, chipFont, mono);
   underY += 1.5 + smallFont * 0.5;
   pdf.setFont("helvetica", "normal");

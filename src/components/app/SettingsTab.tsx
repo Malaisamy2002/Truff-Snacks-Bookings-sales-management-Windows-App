@@ -301,7 +301,7 @@ function SnackItemRow({ item }: { item: SnackItem }) {
   const del = useDeleteSnackItem();
 
   return (
-    <div className="frost-soft lift grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-[1.4fr_1fr_110px_110px_110px_auto_auto] md:items-center">
+    <div className="frost-soft lift grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-[1.4fr_1fr_110px_110px_auto_auto] md:items-center">
       <Input
         value={f.item_name}
         onChange={(e) => setF({ ...f, item_name: e.target.value })}
@@ -324,14 +324,6 @@ function SnackItemRow({ item }: { item: SnackItem }) {
         onChange={(e) => setF({ ...f, cost_price: e.target.value })}
         placeholder="Cost ₹"
       />
-      <div
-        className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm"
-        aria-label={`${item.item_name} stock count`}
-        title="Current stock count; adjust it from the Snacks stock card"
-      >
-        <span className="font-medium tabular-nums">{item.stock_quantity}</span>
-        <span className="ml-1 text-muted-foreground">in stock</span>
-      </div>
       <div className="flex items-center gap-2 text-sm">
         <Switch
           checked={item.is_active}

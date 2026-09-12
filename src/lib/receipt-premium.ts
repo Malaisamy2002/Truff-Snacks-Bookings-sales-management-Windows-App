@@ -78,7 +78,7 @@ export function buildPremiumReceiptPdf(doc: ReceiptDoc, s: PrintSettings): jsPDF
 function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "roll"): jsPDF {
   const wide = kind === "a4" || kind === "a5";
   const width = wide ? paperInfo(s.paper).widthMm : paperWidthMm(s);
-  const scale = s.fontScale || 1;
+  let scale = s.fontScale || 1;
   const sym = s.currencySymbol;
   const wantColor = wide || s.thermalColorMode === "color";
   const navy = wantColor ? NAVY : ([40, 40, 40] as [number, number, number]);
@@ -91,7 +91,7 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
   const contentW = width - marginX * 2;
   const money = (v: number) => pmoney(v, sym);
 
-  const renderBody = (pdf: jsPDF, pageH: number): number => {
+  const renderBody = (pdf: jsPDF, pageH: number, includeUpi = true): number => {
     let y = 0;
     const headerFont = wide ? (kind === "a4" ? 20 : 15) : 11;
     const bodyFont = wide ? (kind === "a4" ? 10 : 8.5) : 7.5;
@@ -305,9 +305,22 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
 
     // Item table — shaded navy header, zebra rows.
     const noColW = wide ? 8 : 6;
-    const qtyColW = wide ? contentW * 0.14 : contentW * 0.18;
-    const amtColW = wide ? contentW * 0.2 : contentW * 0.26;
-    const labelColW = contentW - noColW - qtyColW - amtColW;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(bodyFont * scale);
+    const qtyTexts = doc.lines.map((line) => (line.qty === undefined ? "" : String(line.qty)));
+    const amountTexts = doc.lines.map((line) => money(line.amount ?? 0));
+    const widest = (values: string[]) =>
+      Math.max(...values.map((value) => pdf.getTextWidth(value)));
+    const qtyColW = Math.min(
+      contentW * (wide ? 0.24 : 0.35),
+      Math.max(7 * scale, widest(["QTY", ...qtyTexts])),
+    );
+    const amtColW = Math.min(
+      Math.max(contentW - noColW - 6, 12 * scale),
+      Math.max(12 * scale, widest([wide ? "AMOUNT" : "AMT", ...amountTexts])),
+    );
+    const columnGap = wide ? 2 * scale : 1 * scale;
+    const labelColW = contentW - noColW - qtyColW - amtColW - columnGap;
     const rowH = (wide ? 6.5 : 5) * scale;
     const headerBandH = (wide ? 7 : 5.5) * scale;
 
@@ -356,12 +369,17 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
         pdf.text(lbl, marginX + noColW, ty + li * rowH * 0.62);
       });
       pdf.text(
-        line.qty !== undefined ? String(line.qty) : "",
+        fitTextToWidth(pdf, line.qty !== undefined ? String(line.qty) : "", qtyColW - 1),
         marginX + noColW + labelColW + qtyColW,
         ty,
         { align: "right" },
       );
-      pdf.text(money(line.amount ?? 0), width - marginX - 1, ty, { align: "right" });
+      pdf.text(
+        fitTextToWidth(pdf, money(line.amount ?? 0), amtColW - 1),
+        width - marginX - 1,
+        ty,
+        { align: "right" },
+      );
       if (line.sub) {
         // Sits below however many description lines actually printed, not a
         // fixed offset — otherwise a wrapped 2nd line and the sub line
@@ -419,10 +437,12 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
     }
     y += wide ? 6 : 5;
 
+    let deferredUpi = false;
+
     // Payment / QR panel — only when a UPI ID is configured. Drawn by the
     // shared drawUpiPanel (receipt-upi.ts) so A4/A5/80mm/58mm all render the
     // identical amount-free "Scan & Pay" block.
-    if (s.upiId.trim()) {
+    if (includeUpi && s.upiId.trim()) {
       const balanceRow = doc.totals.find((t) => t.label === "Balance due");
       const hasBalance = !!balanceRow;
       const paidFlag = statusVal === "PAID";
@@ -453,26 +473,41 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
         }
         qrSize = candidate;
       }
-      const panelH = drawUpiPanel(pdf, {
-        x: marginX,
-        y,
+      const requiredPanelH = estimateUpiPanelHeight({
         width: contentW,
-        upiId: s.upiId,
-        payeeName: s.shopName,
-        reference: doc.docNo,
-        balanceText: balanceRow?.value ?? null,
-        status: statusVal,
         scale,
         variant: wide ? "wide" : "roll",
-        mono: !wantColor,
-        apps: s.upiApps,
-        navy,
-        gold,
-        fill,
-        green,
-        ...(qrSize !== undefined ? { qrSize } : {}),
+        qrSize,
+        hasBalance,
+        paid: paidFlag,
       });
-      y += panelH + (wide ? 6 : 5);
+      // A5 is a fixed-height sheet. If a long bill leaves less room than the
+      // smallest readable QR panel, never draw a partial card under the
+      // footer; move the payment panel to a clean second A5 page instead.
+      if (wide && y + requiredPanelH > pageH - footH - 2) {
+        deferredUpi = true;
+      } else {
+        const panelH = drawUpiPanel(pdf, {
+          x: marginX,
+          y,
+          width: contentW,
+          upiId: s.upiId,
+          payeeName: s.shopName,
+          reference: doc.docNo,
+          balanceText: balanceRow?.value ?? null,
+          status: statusVal,
+          scale,
+          variant: wide ? "wide" : "roll",
+          mono: !wantColor,
+          apps: s.upiApps,
+          navy,
+          gold,
+          fill,
+          green,
+          ...(qrSize !== undefined ? { qrSize } : {}),
+        });
+        y += panelH + (wide ? 6 : 5);
+      }
     }
 
     if (doc.note) {
@@ -507,11 +542,71 @@ function renderBoxed(doc: ReceiptDoc, s: PrintSettings, kind: "a4" | "a5" | "rol
       }
     }
 
+    if (deferredUpi) {
+      // Keep the bill page clean and give the QR its own complete sheet when
+      // the fixed A5/A4 page has no remaining vertical capacity.
+      pdf.addPage([width, pageH]);
+      const paymentY = kind === "a4" ? 24 : 18;
+      const balanceRow = doc.totals.find((t) => t.label === "Balance due");
+      const paidFlag = statusVal === "PAID";
+      const panelH = drawUpiPanel(pdf, {
+        x: marginX,
+        y: paymentY,
+        width: contentW,
+        upiId: s.upiId,
+        payeeName: s.shopName,
+        reference: doc.docNo,
+        balanceText: balanceRow?.value ?? null,
+        status: statusVal,
+        scale,
+        variant: "wide",
+        apps: s.upiApps,
+        navy,
+        gold,
+        fill,
+        green,
+        qrSize: kind === "a4" ? 30 : 24,
+      });
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(smallFont * scale);
+      pdf.setTextColor(...navy);
+      pdf.text("Payment details", width / 2, paymentY - 7, { align: "center" });
+      // The second page uses the same footer geometry as the bill page.
+      if (footerText || addrLines.length) {
+        pdf.setFillColor(...navy);
+        pdf.rect(0, pageH - footH, width, footH, "F");
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(smallFont * scale);
+        let fy = pageH - footH + footPad + smallFont * scale * 0.45;
+        for (const line of addrLines) {
+          pdf.text(line, width / 2, fy, { align: "center" });
+          fy += addrLineH;
+        }
+        if (addrLines.length && footerText) fy += 1.5;
+        if (footerText) {
+          pdf.text(fitTextToWidth(pdf, footerText, contentW), width / 2, fy, {
+            align: "center",
+          });
+        }
+      }
+      y = Math.max(y, paymentY + panelH);
+    }
+
     return y;
   };
 
   if (wide) {
     const height = paperInfo(s.paper).heightMm!;
+    // Fixed A4/A5 sheets must reserve space for the footer. Measure once and
+    // reduce the complete layout proportionally for unusually long bills
+    // rather than allowing totals to disappear underneath the footer.
+    const probe = new jsPDF({ unit: "mm", format: [width, height] });
+    const measured = renderBody(probe, height, false);
+    const usableHeight = height - (wide ? 28 : 14);
+    if (measured > usableHeight) {
+      scale = Math.max(0.72, scale * (usableHeight / measured));
+    }
     const pdf = new jsPDF({ unit: "mm", format: [width, height] });
     renderBody(pdf, height);
     return pdf;
