@@ -686,19 +686,45 @@ function printPdfFrame(url: string): Promise<boolean> {
     // A zero-size frame never gets a viewport, so the browser's built-in PDF
     // viewer (Chromium/WebView2) never actually renders into it — print()
     // then silently no-ops on an empty document instead of throwing, so a
-    // fixed but genuinely sized, off-screen frame is required here.
+    // fixed but genuinely sized frame is required here. It also has to stay
+    // inside the viewport (left/top 0, hidden only via opacity/pointer-
+    // events) rather than parked off-canvas — WebView2 silently refuses to
+    // print an off-canvas frame too.
     frame.style.cssText =
-      "position:fixed;left:-10000px;top:-10000px;width:800px;height:1000px;border:0";
+      "position:fixed;left:0;top:0;width:800px;height:1000px;border:0;opacity:0;pointer-events:none;z-index:-1";
     frame.onload = () => {
       try {
         const printWindow = frame.contentWindow;
         if (!printWindow) throw new Error("Print frame is unavailable");
-        printWindow.addEventListener("afterprint", () => finish(true), { once: true });
+        let afterPrintFired = false;
+        printWindow.addEventListener(
+          "afterprint",
+          () => {
+            afterPrintFired = true;
+            finish(true);
+          },
+          { once: true },
+        );
         printWindow.focus();
         printWindow.print();
-        // Some embedded PDF viewers omit afterprint; returning from print()
-        // means the native pipeline has accepted the job.
-        window.setTimeout(() => finish(true), 250);
+        // `print()` returning without throwing is NOT proof the native
+        // dialog opened — WebView2's embedded PDF viewer can silently no-op
+        // it. Some viewers genuinely omit `afterprint` after a real print,
+        // so this can't wait forever, but treating a bare timeout as success
+        // (the old behaviour) is exactly what made every Print button here
+        // look like it did nothing: no dialog AND no error, because the
+        // fallback below never got a chance to run. Report failure instead
+        // so the caller falls back to opening the saved PDF.
+        // 3s, not a hair-trigger: window.print() blocks the calling script
+        // until the dialog closes on every Chromium-based engine we've
+        // verified, so afterprint is normally already true well before this
+        // fires. The margin exists only in case WebView2 ever shows the
+        // dialog asynchronously instead of blocking — too short here would
+        // misreport a still-open dialog as a failure and pop the saved-PDF
+        // fallback open on top of it.
+        window.setTimeout(() => {
+          if (!afterPrintFired) finish(false);
+        }, 3_000);
       } catch {
         finish(false);
       }
