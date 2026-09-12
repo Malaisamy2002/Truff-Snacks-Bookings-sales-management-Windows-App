@@ -107,12 +107,11 @@ export function drawQr(
 
 /**
  * Official NPCI UPI mark — bold "UPI" wordmark followed by the saffron /
- * white / green tricolour arrow, matching the current npci.org.in logo.
- * Drawn as vector shapes (no bitmap asset) so it prints crisp at any size
- * and stays in sync with the real mark instead of the old solid-colour
- * lettering (which also went unreadable: its near-black "I" disappeared
- * against the navy header). White text keeps full contrast there; the
- * arrow's three flat triangles carry the tricolour instead of the letters.
+ * green tricolour arrow, matching the current npci.org.in logo: two
+ * triangles (not three parallel stripes) leaning slightly right, split by
+ * a thin gap. Drawn as vector shapes (no bitmap asset) so it prints crisp
+ * at any size and stays in sync with the real mark. White text keeps full
+ * contrast on the navy header.
  */
 function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number) {
   pdf.setFont("helvetica", "bold");
@@ -121,29 +120,27 @@ function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number) {
   pdf.text("UPI", x, y);
   const textW = pdf.getTextWidth("UPI");
 
-  // Tricolour arrow: three overlapping right-pointing triangles (saffron,
-  // white, green — front to back) rather than one filled shape, so the
-  // tricolour reads correctly on any background, not just white.
+  // Two-triangle arrow — saffron on top, green on bottom, each a
+  // right-pointing wedge (vertical-ish outer edge, tip on the right) —
+  // separated by a thin gap and leaned right at the outer corner, the way
+  // the real mark's arrowhead is cut and tilted, rather than three upright
+  // parallel stripes offset sideways.
   const gap = fontSize * 0.22;
   const arrowH = fontSize * 0.82;
-  const arrowW = arrowH * 0.6;
-  const step = arrowW * 0.42;
+  const arrowW = arrowH * 0.62;
   const ax = x + textW + gap;
   const topY = y - arrowH * 0.76;
   const botY = y + arrowH * 0.24;
   const midY = (topY + botY) / 2;
-  const stripes: RGB[] = [
-    [255, 153, 51],
-    [255, 255, 255],
-    [19, 136, 8],
-  ];
-  stripes.forEach((color, i) => {
-    const ox = ax + i * step;
-    pdf.setFillColor(...color);
-    pdf.triangle(ox, topY, ox, botY, ox + arrowW, midY, "F");
-  });
+  const slit = arrowH * 0.09; // thin gap between the two triangles
+  const lean = arrowW * 0.22; // rightward tilt of each triangle's outer corner
 
-  return textW + gap + step * (stripes.length - 1) + arrowW;
+  pdf.setFillColor(255, 153, 51);
+  pdf.triangle(ax + lean, topY, ax, midY - slit, ax + arrowW, (topY + midY - slit) / 2, "F");
+  pdf.setFillColor(19, 136, 8);
+  pdf.triangle(ax, midY + slit, ax + lean, botY, ax + arrowW, (midY + slit + botY) / 2, "F");
+
+  return textW + gap + arrowW;
 }
 
 function appStripWidth(
@@ -158,11 +155,67 @@ function appStripWidth(
   );
 }
 
+/** Packs chips onto as few rows as fit within `maxRowWidth`, greedily
+ * adding to the current row and only starting a new one when the next chip
+ * would overflow it — so 2-3 apps still sit on one line, and only a full
+ * set of 4 (on a narrow enough card) wraps onto a second. */
+function wrapAppRows(
+  apps: (typeof UPI_APPS)[number][],
+  logoH: number,
+  padX: number,
+  gap: number,
+  maxRowWidth: number,
+): (typeof UPI_APPS)[number][][] {
+  const rows: (typeof UPI_APPS)[number][][] = [[]];
+  for (const app of apps) {
+    const row = rows[rows.length - 1] ?? [];
+    const trial = [...row, app];
+    if (row.length && appStripWidth(trial, logoH, padX, gap) > maxRowWidth) {
+      rows.push([app]);
+    } else {
+      rows[rows.length - 1] = trial;
+    }
+  }
+  return rows;
+}
+
+function appStripChipMetrics(fontSize: number, mono: boolean) {
+  const padX = mono ? 0.8 : 1;
+  const gap = 1.2;
+  const rowGap = 1;
+  const logoH = Math.max(2.8, fontSize * 0.62);
+  const padY = 0.45;
+  const rowH = logoH + padY * 2;
+  return { padX, gap, rowGap, logoH, padY, rowH };
+}
+
+/** Height the app-chip strip will consume for a given width budget, without
+ * drawing anything — lets the panel-height math (and the A5 overflow check)
+ * reserve the right amount of room even when the shop's picked apps need to
+ * wrap onto a second row. */
+export function estimateAppStripHeight(
+  apps: (typeof UPI_APPS)[number][],
+  fontSize: number,
+  mono: boolean,
+  maxRowWidth: number,
+): number {
+  const { padX, gap, rowGap, logoH, rowH } = appStripChipMetrics(fontSize, mono);
+  const rows = wrapAppRows(apps, logoH, padX, gap, maxRowWidth);
+  return rows.length * rowH + (rows.length - 1) * rowGap;
+}
+
 /**
  * Row of official UPI-app wordmarks, limited to whichever apps the shop
  * picked in Settings. The PNGs are embedded in the bundle rather than loaded
  * from a URL, so exported invoices keep their brand marks offline and the
  * synchronous jsPDF renderer can place them reliably.
+ *
+ * Wraps onto a second row — instead of running past the edge of the card,
+ * which is what a 4-app selection used to do — whenever the full strip
+ * doesn't fit the width budget in `bounds`. Each row is centred
+ * independently and clamped inside `bounds`, so it stays on the card even
+ * when `centerX` (usually the QR's centre) sits off to one side rather than
+ * at the panel's true centre.
  */
 function drawAppStrip(
   pdf: jsPDF,
@@ -171,26 +224,33 @@ function drawAppStrip(
   y: number,
   fontSize: number,
   mono: boolean,
+  bounds?: { left: number; right: number },
 ): number {
-  const padX = mono ? 0.8 : 1;
-  const gap = 1.2;
-  const logoH = Math.max(2.8, fontSize * 0.62);
-  const padY = 0.45;
-  const h = logoH + padY * 2;
-  const total = appStripWidth(apps, logoH, padX, gap);
-  let x = centerX - total / 2;
-  for (const app of apps) {
-    const logo = PAYMENT_BRAND_LOGOS[app.brand as PaymentBrandId];
-    const logoW = logoH * logo.aspect;
-    const w = logoW + padX * 2;
-    pdf.setFillColor(255, 255, 255);
-    pdf.setDrawColor(mono ? 90 : 220, mono ? 90 : 222, mono ? 90 : 228);
-    pdf.setLineWidth(0.15);
-    pdf.roundedRect(x, y, w, h, 0.7, 0.7, "FD");
-    pdf.addImage(logo.dataUrl, "PNG", x + padX, y + padY, logoW, logoH);
-    x += w + gap;
+  const { padX, gap, rowGap, logoH, padY, rowH } = appStripChipMetrics(fontSize, mono);
+  const left = bounds?.left ?? -1e6;
+  const right = bounds?.right ?? 1e6;
+  const maxRowWidth = Math.max(logoH * 2, right - left);
+  const rows = wrapAppRows(apps, logoH, padX, gap, maxRowWidth);
+
+  let rowY = y;
+  for (const row of rows) {
+    const rowTotal = appStripWidth(row, logoH, padX, gap);
+    let x = centerX - rowTotal / 2;
+    x = Math.min(Math.max(x, left), right - rowTotal);
+    for (const app of row) {
+      const logo = PAYMENT_BRAND_LOGOS[app.brand as PaymentBrandId];
+      const logoW = logoH * logo.aspect;
+      const w = logoW + padX * 2;
+      pdf.setFillColor(255, 255, 255);
+      pdf.setDrawColor(mono ? 90 : 220, mono ? 90 : 222, mono ? 90 : 228);
+      pdf.setLineWidth(0.15);
+      pdf.roundedRect(x, rowY, w, rowH, 0.7, 0.7, "FD");
+      pdf.addImage(logo.dataUrl, "PNG", x + padX, rowY + padY, logoW, logoH);
+      x += w + gap;
+    }
+    rowY += rowH + rowGap;
   }
-  return h;
+  return rowY - y - rowGap;
 }
 
 export type UpiPanelOpts = {
@@ -231,11 +291,13 @@ export type UpiPanelOpts = {
  * dry-run/measure-only mode, which is why this only computes numbers and
  * never touches `pdf`. */
 function panelMetrics(o: {
+  width: number;
   scale: number;
   variant: "wide" | "roll";
   qrSize?: number | undefined;
   hasBalance: boolean;
   paid: boolean;
+  apps: (typeof UPI_APPS)[number][];
 }) {
   const wide = o.variant === "wide";
   const scale = o.scale || 1;
@@ -246,7 +308,12 @@ function panelMetrics(o: {
   const bodyFont = (wide ? 8 : 6.5) * scale;
   const smallFont = (wide ? 6.8 : 5.8) * scale;
   const chipFont = (wide ? 5.6 : 5) * scale;
-  const qrBlockH = qrSize + 2 + chipFont * 0.5 + 1.5 + smallFont * 0.5;
+  // Width budget the chip strip actually gets to lay out in (full card
+  // minus the side padding) — used to size the reserved height, so a
+  // 4-app selection that wraps onto a second row still gets the room it
+  // needs instead of the panel border cutting it off.
+  const chipStripH = estimateAppStripHeight(o.apps, chipFont, false, o.width - pad * 2);
+  const qrBlockH = qrSize + 2 + chipStripH + 1.5 + smallFont * 0.5;
   const detailRows = 3 + (o.hasBalance || o.paid ? 1 : 0);
   const detailsH = detailRows * bodyFont * 0.62 + 2;
   const bodyH = wide ? Math.max(qrBlockH, detailsH) : qrBlockH + detailsH + 2;
@@ -265,8 +332,9 @@ export function estimateUpiPanelHeight(o: {
   qrSize?: number | undefined;
   hasBalance: boolean;
   paid: boolean;
+  apps?: UpiAppId[];
 }): number {
-  return panelMetrics(o).panelH;
+  return panelMetrics({ ...o, apps: resolveApps(o.apps) }).panelH;
 }
 
 /** Draws the panel at (x, y) and returns the height consumed, so callers can
@@ -294,6 +362,8 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
     qrSize: o.qrSize,
     hasBalance: !!o.balanceText,
     paid,
+    width: o.width,
+    apps,
   });
 
   // Card + navy header strip with the gold hairline.
@@ -333,9 +403,11 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
   pdf.rect(qrX - 0.8, qrY - 0.8, qrSize + 1.6, qrSize + 1.6, "D");
   drawQr(pdf, qrX, qrY, qrSize, uri, dark);
 
-  let underY = qrY + qrSize + 2 + chipFont * 0.5;
-  drawAppStrip(pdf, apps, qrX + qrSize / 2, qrY + qrSize + 2, chipFont, mono);
-  underY += 1.5 + smallFont * 0.5;
+  const chipStripH = drawAppStrip(pdf, apps, qrX + qrSize / 2, qrY + qrSize + 2, chipFont, mono, {
+    left: o.x + pad,
+    right: o.x + o.width - pad,
+  });
+  let underY = qrY + qrSize + 2 + chipStripH + 1.5 + smallFont * 0.5;
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(smallFont);
   pdf.setTextColor(110, 110, 110);
@@ -435,8 +507,14 @@ function drawSlim(
   y += smallFont * 0.62;
   pdf.setFont("helvetica", "normal");
   pdf.setTextColor(70, 70, 70);
-  pdf.text(apps.map((a) => a.name).join(" | "), centerX, y, { align: "center" });
-  y += smallFont * 0.62;
+  // splitTextToSize wraps onto a second centered line instead of running
+  // the full "GPay | PhonePe | Paytm | BHIM" list past the slip's edge
+  // when all four apps are picked on a narrow 50/58mm format.
+  const appLines = pdf.splitTextToSize(apps.map((a) => a.name).join(" | "), o.width - 4) as string[];
+  appLines.forEach((appLine) => {
+    pdf.text(appLine, centerX, y, { align: "center" });
+    y += smallFont * 0.62;
+  });
 
   // Paid / balance-due mark, same information the wide and roll variants
   // carry — a fully paid slip shouldn't still invite the customer to pay,
