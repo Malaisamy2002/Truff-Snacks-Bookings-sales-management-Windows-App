@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
-import { PAYMENT_BRAND_LOGOS, type PaymentBrandId } from "./payment-brand-assets";
+import { PAYMENT_BRAND_LOGOS, UPI_MARK_LOGO, type PaymentBrandId } from "./payment-brand-assets";
 
 /**
  * The single "Scan & Pay" payment panel shared by every bill format —
@@ -106,41 +106,19 @@ export function drawQr(
 }
 
 /**
- * Official NPCI UPI mark — bold "UPI" wordmark followed by the saffron /
- * green tricolour arrow, matching the current npci.org.in logo: two
- * triangles (not three parallel stripes) leaning slightly right, split by
- * a thin gap. Drawn as vector shapes (no bitmap asset) so it prints crisp
- * at any size and stays in sync with the real mark. White text keeps full
- * contrast on the navy header.
+ * Draws the official UPI wordmark as the embedded reference logo image
+ * instead of the hand-drawn vector mark, scaled to fit *inside* the navy
+ * header strip — never taller than `maxH` — so it can't spill over the top
+ * or bottom edge of the header the way an unscaled image would. Returns the
+ * rendered width so the caller can right-align it.
  */
-function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number) {
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(fontSize);
-  pdf.setTextColor(255, 255, 255);
-  pdf.text("UPI", x, y);
-  const textW = pdf.getTextWidth("UPI");
-
-  // Two-triangle arrow — saffron on top, green on bottom, each a
-  // right-pointing wedge (vertical-ish outer edge, tip on the right) —
-  // separated by a thin gap and leaned right at the outer corner, the way
-  // the real mark's arrowhead is cut and tilted, rather than three upright
-  // parallel stripes offset sideways.
-  const gap = fontSize * 0.22;
-  const arrowH = fontSize * 0.82;
-  const arrowW = arrowH * 0.62;
-  const ax = x + textW + gap;
-  const topY = y - arrowH * 0.76;
-  const botY = y + arrowH * 0.24;
-  const midY = (topY + botY) / 2;
-  const slit = arrowH * 0.09; // thin gap between the two triangles
-  const lean = arrowW * 0.22; // rightward tilt of each triangle's outer corner
-
-  pdf.setFillColor(255, 153, 51);
-  pdf.triangle(ax + lean, topY, ax, midY - slit, ax + arrowW, (topY + midY - slit) / 2, "F");
-  pdf.setFillColor(19, 136, 8);
-  pdf.triangle(ax, midY + slit, ax + lean, botY, ax + arrowW, (midY + slit + botY) / 2, "F");
-
-  return textW + gap + arrowW;
+function drawUpiMarkImage(pdf: jsPDF, rightX: number, centerY: number, maxH: number): number {
+  const h = maxH;
+  const w = h * UPI_MARK_LOGO.aspect;
+  const x = rightX - w;
+  const y = centerY - h / 2;
+  pdf.addImage(UPI_MARK_LOGO.dataUrl, "PNG", x, y, w, h);
+  return w;
 }
 
 function appStripWidth(
@@ -381,7 +359,6 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
   pdf.setFontSize(titleFont);
   pdf.setTextColor(255, 255, 255);
   pdf.text("SCAN & PAY", o.x + pad, o.y + headerH * 0.72);
-  const markW = drawUpiMark(pdf, 0, -100, titleFont); // measure off-page
   if (mono) {
     // Thermal B&W can't print the tricolour arrow — just the plain white
     // "UPI" wordmark, right-aligned like the colour header.
@@ -390,7 +367,12 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
     pdf.setTextColor(255, 255, 255);
     pdf.text("UPI", o.x + o.width - pad, o.y + headerH * 0.72, { align: "right" });
   } else {
-    drawUpiMark(pdf, o.x + o.width - pad - markW, o.y + headerH * 0.72, titleFont);
+    // Logo height is capped to the header strip's own inner height (minus
+    // the gold hairline and a touch of breathing room top/bottom) so it is
+    // always contained inside the navy strip, never overflowing above or
+    // below it regardless of the panel's scale.
+    const markH = Math.min(headerH - 1.6, titleFont * 1.15);
+    drawUpiMarkImage(pdf, o.x + o.width - pad, o.y + 0.6 + headerH / 2, markH);
   }
 
   const topY = o.y + headerH + pad;
