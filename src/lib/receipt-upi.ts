@@ -10,11 +10,11 @@ import QRCode from "qrcode";
  * The QR is a *static* UPI QR (no `am` parameter): the payer types the amount
  * themselves, which is what turf advances, part payments and running dues
  * need. Payload follows the NPCI deep-link format (`pa`/`pn`/`cu`/`tn`) that
- * GPay, PhonePe, Paytm and BHIM all accept.
+ * Google Pay, PhonePe, Paytm and BHIM UPI all accept.
  */
 
 export const UPI_APPS = [
-  { id: "gpay", name: "GPay", color: [66, 133, 244] as RGB },
+  { id: "gpay", name: "Google Pay", color: [66, 133, 244] as RGB },
   { id: "phonepe", name: "PhonePe", color: [95, 37, 159] as RGB },
   { id: "paytm", name: "Paytm", color: [0, 150, 214] as RGB },
   { id: "bhim", name: "BHIM", color: [242, 101, 34] as RGB },
@@ -123,23 +123,10 @@ function drawUpiMark(pdf: jsPDF, x: number, y: number, fontSize: number, mono: b
   return cx - x;
 }
 
-function appStripWidth(
-  pdf: jsPDF,
-  apps: (typeof UPI_APPS)[number][],
-  fontSize: number,
-  padX: number,
-  gap: number,
-) {
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(fontSize);
-  return apps.reduce((w, a) => w + pdf.getTextWidth(a.name) + padX * 2 + gap, -gap);
-}
-
 /**
- * Row of small UPI-app chips (e.g. "GPay / PhonePe"), limited to whichever
- * apps the shop picked in Settings (default GPay + PhonePe). Colour fills on
- * paper that can print colour; on thermal black & white they become outlined
- * chips so they stay legible on a monochrome head.
+ * Lightweight app line under the QR. Keep the official app names readable
+ * without putting each name inside a pill or a second box — the QR remains
+ * the visual focus and the line still works on monochrome thermal printers.
  */
 function drawAppStrip(
   pdf: jsPDF,
@@ -149,29 +136,24 @@ function drawAppStrip(
   fontSize: number,
   mono: boolean,
 ): number {
-  const padX = 1.2;
-  const gap = 1.2;
-  const h = fontSize * 0.5;
-  const total = appStripWidth(pdf, apps, fontSize, padX, gap);
-  let x = centerX - total / 2;
+  const gap = 2.2;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(fontSize);
+  const total = apps.reduce(
+    (w, a) => w + fontSize * 0.22 + 0.8 + pdf.getTextWidth(a.name) + gap,
+    -gap,
+  );
+  let x = centerX - total / 2;
   for (const app of apps) {
-    const w = pdf.getTextWidth(app.name) + padX * 2;
-    if (mono) {
-      pdf.setDrawColor(70, 70, 70);
-      pdf.setLineWidth(0.15);
-      pdf.roundedRect(x, y, w, h, 0.6, 0.6, "D");
-      pdf.setTextColor(40, 40, 40);
-    } else {
-      pdf.setFillColor(...app.color);
-      pdf.roundedRect(x, y, w, h, 0.6, 0.6, "F");
-      pdf.setTextColor(255, 255, 255);
-    }
-    pdf.text(app.name, x + w / 2, y + h * 0.72, { align: "center" });
-    x += w + gap;
+    const dot = fontSize * 0.22;
+    const textX = x + dot + 0.8;
+    pdf.setFillColor(...(mono ? [70, 70, 70] : app.color));
+    pdf.circle(x + dot / 2, y + fontSize * 0.32, dot / 2, "F");
+    pdf.setTextColor(...(mono ? [55, 55, 55] : [45, 45, 45]));
+    pdf.text(app.name, textX, y + fontSize * 0.72);
+    x += dot + 0.8 + pdf.getTextWidth(app.name) + gap;
   }
-  return h;
+  return fontSize * 0.72;
 }
 
 export type UpiPanelOpts = {
@@ -227,7 +209,7 @@ function panelMetrics(o: {
   const bodyFont = (wide ? 8 : 6.5) * scale;
   const smallFont = (wide ? 6.8 : 5.8) * scale;
   const chipFont = (wide ? 5.6 : 5) * scale;
-  const qrBlockH = qrSize + 2 + chipFont * 0.5 + 1.5 + smallFont * 0.5;
+  const qrBlockH = qrSize + 2 + chipFont * 0.72 + 1.5 + smallFont * 0.5;
   const detailRows = 3 + (o.hasBalance || o.paid ? 1 : 0);
   const detailsH = detailRows * bodyFont * 0.62 + 2;
   const bodyH = wide ? Math.max(qrBlockH, detailsH) : qrBlockH + detailsH + 2;
@@ -315,7 +297,7 @@ export function drawUpiPanel(pdf: jsPDF, o: UpiPanelOpts): number {
   pdf.rect(qrX - 0.8, qrY - 0.8, qrSize + 1.6, qrSize + 1.6, "D");
   drawQr(pdf, qrX, qrY, qrSize, uri, dark);
 
-  let underY = qrY + qrSize + 2 + chipFont * 0.5;
+  let underY = qrY + qrSize + 2 + chipFont * 0.72;
   drawAppStrip(pdf, apps, qrX + qrSize / 2, qrY + qrSize + 2, chipFont, mono);
   underY += 1.5 + smallFont * 0.5;
   pdf.setFont("helvetica", "normal");
