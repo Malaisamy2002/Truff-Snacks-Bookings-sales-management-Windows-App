@@ -816,7 +816,8 @@ export async function printReceipt(
         new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer),
         copies,
       );
-    } catch {
+    } catch (err) {
+      console.error("Raster print failed, falling back to legacy print path:", err);
       printed = false;
     }
     if (printed) {

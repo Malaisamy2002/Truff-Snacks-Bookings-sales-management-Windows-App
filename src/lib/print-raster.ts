@@ -31,7 +31,7 @@ async function loadPdfJs() {
   // Bundled by Vite as a real asset URL (same origin), so it satisfies the
   // app's `script-src 'self'` CSP and works offline in the installed app.
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
+    "pdfjs-dist/build/pdf.worker.mjs",
     import.meta.url,
   ).href;
   return pdfjs;
