@@ -68,7 +68,17 @@ async function renderPages(bytes: Uint8Array): Promise<RenderedPage[]> {
       page.cleanup();
     }
   } finally {
-    await doc.destroy();
+    // Best-effort cleanup only: every page has already been rendered into
+    // `pages` by this point, so a broken `destroy()` (seen in the wild as
+    // "t.destroy is not a function" on some WebView2/pdf.js combinations)
+    // must never be allowed to reject this function and throw away a
+    // render that already succeeded — that's strictly worse than a small
+    // memory-cleanup leak.
+    try {
+      await doc.destroy();
+    } catch {
+      /* ignore — cleanup failure, not a print failure */
+    }
   }
   if (!pages.length) throw new Error("The receipt has no pages to print");
   return pages;
