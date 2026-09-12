@@ -48,6 +48,13 @@ export const LINE_SPACING_OPTIONS = [
 ] as const;
 export type LineSpacingId = (typeof LINE_SPACING_OPTIONS)[number]["id"];
 
+/** The two print paths the Print button can take — see `printMethod` below. */
+export const PRINT_METHOD_OPTIONS = [
+  { id: "system", label: "Default print (printer dialog)" },
+  { id: "pdf", label: "PDF print (open as PDF)" },
+] as const;
+export type PrintMethod = (typeof PRINT_METHOD_OPTIONS)[number]["id"];
+
 /** Ready-made setting bundles for common printer hardware, so the person
  * doesn't have to work out width/density/spacing by hand. Applied on top of
  * (merged with) whatever is already saved. */
@@ -130,9 +137,14 @@ export type PrintSettings = {
   /** Extra blank feed (mm) left at the bottom of roll-paper receipts, so an
    * auto-cutter doesn't slice through the last line. Ignored for sheets. */
   cutFeedMm: number;
-  /** Open the receipt in a normal browser tab instead of sending it straight
-   * to the print dialog — lets the person double-check layout first. */
-  previewBeforePrint: boolean;
+  /** Which print path the Print button uses — the person picks exactly one,
+   * so pressing Print never juggles two different windows at once.
+   * "system" sends the receipt straight to the real printer dialog (the
+   * rasterised-image print path on desktop, or the OS/browser print sheet
+   * elsewhere). "pdf" skips the printer dialog entirely and opens the
+   * receipt as a PDF instead, so the person can print it from their own PDF
+   * viewer (or just save/share it). */
+  printMethod: PrintMethod;
   /** "classic" = the original plain ruled-line layout.
    * "premium" = the boxed/colored letterhead-style layout (navy+gold A4,
    * compact A5, boxed color/B&W thermal receipts, condensed 58mm POS slip)
@@ -186,7 +198,7 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   density: "normal",
   lineSpacing: "normal",
   cutFeedMm: 0,
-  previewBeforePrint: false,
+  printMethod: "system",
   templateStyle: "premium",
   upiId: "",
   upiApps: DEFAULT_UPI_APPS,
@@ -245,6 +257,14 @@ export function normalizePrintSettings(value: unknown): PrintSettings {
     saved["thermalColorMode"] === "color" || saved["thermalColorMode"] === "bw"
       ? (saved["thermalColorMode"] as PrintSettings["thermalColorMode"])
       : DEFAULT_PRINT_SETTINGS.thermalColorMode;
+  // Migrates the old `previewBeforePrint` boolean (pre-toggle installs) to
+  // the new two-way `printMethod` choice: an existing "on" preview setting
+  // becomes explicit "pdf", anything else keeps the printer-dialog default.
+  const printMethod = PRINT_METHOD_OPTIONS.some((item) => item.id === saved["printMethod"])
+    ? (saved["printMethod"] as PrintMethod)
+    : saved["previewBeforePrint"] === true
+      ? "pdf"
+      : DEFAULT_PRINT_SETTINGS.printMethod;
   const savedUpiApps = Array.isArray(saved["upiApps"])
     ? (saved["upiApps"] as unknown[]).filter((v): v is UpiAppId =>
         UPI_APP_IDS.includes(v as UpiAppId),
@@ -288,10 +308,7 @@ export function normalizePrintSettings(value: unknown): PrintSettings {
     density,
     lineSpacing,
     cutFeedMm: savedNumber(saved["cutFeedMm"], DEFAULT_PRINT_SETTINGS.cutFeedMm, 0, 40),
-    previewBeforePrint: savedBoolean(
-      saved["previewBeforePrint"],
-      DEFAULT_PRINT_SETTINGS.previewBeforePrint,
-    ),
+    printMethod,
     templateStyle,
     upiId: savedString(saved["upiId"], DEFAULT_PRINT_SETTINGS.upiId).slice(0, 80),
     upiApps,

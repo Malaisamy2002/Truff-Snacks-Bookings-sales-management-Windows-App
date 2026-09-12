@@ -21,17 +21,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   DEFAULT_PRINT_SETTINGS,
   DENSITY_OPTIONS,
   LINE_SPACING_OPTIONS,
   PAPER_TYPES,
   PRINTER_PRESETS,
+  PRINT_METHOD_OPTIONS,
   isRollPaper,
   usePrintSettings,
   type DensityId,
   type LineSpacingId,
   type PaperId,
+  type PrintMethod,
 } from "@/lib/print";
 import { UPI_APPS, type UpiAppId } from "@/lib/receipt-upi";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -402,12 +405,24 @@ export function PrintSettingsCard() {
                 checked={settings.autoPrint}
                 onCheckedChange={(v) => set("autoPrint", v)}
               />
-              <SettingsSwitchRow
-                label="Preview before printing"
-                hint="Shows a preview before the print dialog"
-                checked={settings.previewBeforePrint}
-                onCheckedChange={(v) => set("previewBeforePrint", v)}
-              />
+              <SettingsField
+                label="Print method"
+                hint="Pick exactly one — Print always uses just this, never both."
+              >
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  value={settings.printMethod}
+                  onValueChange={(v) => v && set("printMethod", v as PrintMethod)}
+                  className="w-full justify-stretch"
+                >
+                  {PRINT_METHOD_OPTIONS.map((opt) => (
+                    <ToggleGroupItem key={opt.id} value={opt.id} className="flex-1 text-xs">
+                      {opt.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </SettingsField>
               <SettingsSwitchRow
                 label="Premium boxed & colored layout"
                 hint="Two-tone letterhead style for A4/A5/80mm/58mm/50mm. Other paper sizes keep the plain layout."
@@ -432,7 +447,7 @@ export function PrintSettingsCard() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  settings.previewBeforePrint ? showLayoutPreview() : printReceipt(sample, settings)
+                  settings.printMethod === "pdf" ? showLayoutPreview() : printReceipt(sample, settings)
                 }
               >
                 <Printer className="mr-1 h-4 w-4" /> Test print

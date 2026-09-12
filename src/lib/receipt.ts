@@ -792,11 +792,13 @@ export async function printReceipt(
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
-  // "Preview before print": open the PDF so the person can check the layout
-  // and pick their printer from the OS/browser's own dialog, instead of
-  // jumping straight into a hidden-iframe silent print.
-  if (s.previewBeforePrint) {
-    await openSavedOrPreview("Couldn't open print preview");
+  // "PDF print": open the PDF so the person can check the layout and print
+  // it from their own PDF viewer, instead of going through a printer dialog
+  // here. This is a deliberate, exclusive choice (see `printMethod` in
+  // print.ts) — it never also tries the printer-dialog path below, so
+  // pressing Print only ever opens the one window the person picked.
+  if (s.printMethod === "pdf") {
+    await openSavedOrPreview("Couldn't open receipt for printing");
     return;
   }
 
@@ -804,12 +806,10 @@ export async function printReceipt(
   let printed = true;
 
   // Desktop (Tauri/WebView2): WebView2's PDF viewer refuses a programmatic
-  // print, so the hidden-PDF-iframe route below never reaches a printer
-  // there — it silently fell through to "open the saved PDF", which is why
-  // Print on Windows was opening an external PDF viewer instead of the
-  // printer dialog. Rasterising the pages and printing them as plain HTML
-  // uses the webview's ordinary print pipeline, which does show the real
-  // Windows print dialog. Falls through to the old path if it can't run.
+  // print, so handing it a PDF directly never reaches a printer there.
+  // Rasterising the pages and printing them as plain HTML uses the
+  // webview's ordinary print pipeline instead, which does show the real
+  // Windows print dialog.
   if (isDesktop() && !isAndroid()) {
     try {
       printed = await printPdfBytesAsImages(
@@ -817,21 +817,34 @@ export async function printReceipt(
         copies,
       );
     } catch (err) {
-      console.error("Raster print failed, falling back to legacy print path:", err);
+      console.error("Raster print failed:", err);
       printed = false;
     }
-    if (printed) {
-      URL.revokeObjectURL(url);
-      return;
+    // Deliberately no PDF-window fallback here: the person picked "Default
+    // print" (see printMethod), so silently popping a second PDF window
+    // when the printer dialog fails is exactly the confusing double-window
+    // behaviour this setting exists to avoid. Report the failure once and
+    // let them switch to "PDF print" themselves if they'd rather do that.
+    URL.revokeObjectURL(url);
+    if (!printed) {
+      toast.error("Couldn't open the printer dialog", {
+        description: "Switch to PDF print in Print Settings, then try again.",
+      });
     }
+    return;
   }
 
+  // Browser/PWA (not the desktop shell): the hidden-iframe print path works
+  // fine there, so it stays as the "Default print" path on that platform.
   for (let i = 0; i < copies; i++) {
     printed = await printPdfFrame(url);
     if (!printed) break;
   }
   if (!printed) {
-    await openSavedOrPreview("Couldn't open receipt for printing");
+    toast.error("Couldn't open the printer dialog", {
+      description: "Switch to PDF print in Print Settings, then try again.",
+    });
+    URL.revokeObjectURL(url);
     return;
   }
   URL.revokeObjectURL(url);
